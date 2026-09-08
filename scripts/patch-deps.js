@@ -75,6 +75,125 @@ function patchSettingsNavScroll() {
   console.log('[patch-deps] 已补丁 settings-general：设置弹窗左栏可滚动，底部条目不再被裁掉');
 }
 
+// 会话滚动手势补丁：0.1.1-rc.2 在 scroll 事件到达后立即采样，流式输出或
+// composer 尺寸变化触发的 ResizeObserver 可能在一次滚轮/触摸惯性手势尚未
+// 累计离开底部阈值前重新吸附到底部。回移上游 2026-09-01 / 2026-09-07 的
+// 采样方案：手势期间暂缓布局跟随，500ms 或 scrollend 时统一结算；真正的
+// 程序化 pinned scroll 仍即时结算，避免正常流式跟随出现延迟。
+const CHAT_SCROLL_MARKER = 'const scrollSamplePendingRef = (0, react.useRef)(false);';
+const CHAT_SCROLL_STATE_OLD = [
+  'const atBottomRef = (0, react.useRef)(true);',
+  '\t\t\tconst [atBottom, setAtBottom] = (0, react.useState)(true);',
+].join('\n');
+const CHAT_SCROLL_STATE_NEW = [
+  CHAT_SCROLL_STATE_OLD,
+  '\t\t\tconst scrollSamplePendingRef = (0, react.useRef)(false);',
+  '\t\t\tconst [, setScrollSampleTick] = (0, react.useState)(0);',
+].join('\n');
+const CHAT_SCROLL_LAYOUT_OLD = [
+  '(0, react.useLayoutEffect)(() => {',
+  '\t\t\t\tconst local = listRef.current;',
+  '\t\t\t\t/* v8 ignore next -- ref-null guard: React attaches the ref before layout effects run. */',
+].join('\n');
+const CHAT_SCROLL_LAYOUT_NEW = [
+  '(0, react.useLayoutEffect)(() => {',
+  '\t\t\t\tif (scrollSamplePendingRef.current) return;',
+  '\t\t\t\tconst local = listRef.current;',
+  '\t\t\t\t/* v8 ignore next -- ref-null guard: React attaches the ref before layout effects run. */',
+].join('\n');
+const CHAT_SCROLL_EFFECT_OLD = [
+  '(0, react.useEffect)(() => {',
+  '\t\t\t\tconst local = listRef.current;',
+  '\t\t\t\t/* v8 ignore next -- ref-null guard: effect runs after the list node commits. */',
+  '\t\t\t\tif (local === null) return;',
+  '\t\t\t\tconst el = scrollerOf(local);',
+  '\t\t\t\tconst onScroll = () => {',
+  '\t\t\t\t\tonScrollRef.current();',
+  '\t\t\t\t};',
+  '\t\t\t\tel.addEventListener("scroll", onScroll, { passive: true });',
+  '\t\t\t\treturn () => {',
+  '\t\t\t\t\tel.removeEventListener("scroll", onScroll);',
+  '\t\t\t\t};',
+  '\t\t\t}, []);',
+].join('\n');
+const CHAT_SCROLL_EFFECT_NEW = [
+  '(0, react.useEffect)(() => {',
+  '\t\t\t\tconst local = listRef.current;',
+  '\t\t\t\t/* v8 ignore next -- ref-null guard: effect runs after the list node commits. */',
+  '\t\t\t\tif (local === null) return;',
+  '\t\t\t\tconst el = scrollerOf(local);',
+  '\t\t\t\tlet sampleTimer;',
+  '\t\t\t\tconst sample = () => {',
+  '\t\t\t\t\tif (!scrollSamplePendingRef.current) return;',
+  '\t\t\t\t\tscrollSamplePendingRef.current = false;',
+  '\t\t\t\t\tif (sampleTimer !== void 0) window.clearTimeout(sampleTimer);',
+  '\t\t\t\t\tsampleTimer = void 0;',
+  '\t\t\t\t\tonScrollRef.current();',
+  '\t\t\t\t\tsetScrollSampleTick((tick) => tick + 1);',
+  '\t\t\t\t};',
+  '\t\t\t\tconst onScroll = () => {',
+  '\t\t\t\t\tscrollSamplePendingRef.current = true;',
+  '\t\t\t\t\tif (atBottomRef.current) {',
+  '\t\t\t\t\t\tconst floor = Math.max(0, el.scrollHeight - el.clientHeight);',
+  '\t\t\t\t\t\tconst movedByReader = Math.abs(el.scrollTop - Math.min(observedTopRef.current, floor)) > .5;',
+  '\t\t\t\t\t\tif (!movedByReader) {',
+  '\t\t\t\t\t\t\tsample();',
+  '\t\t\t\t\t\t\treturn;',
+  '\t\t\t\t\t\t}',
+  '\t\t\t\t\t}',
+  '\t\t\t\t\tsampleTimer ??= window.setTimeout(sample, 500);',
+  '\t\t\t\t};',
+  '\t\t\t\tel.addEventListener("scroll", onScroll, { passive: true });',
+  '\t\t\t\tel.addEventListener("scrollend", sample, { passive: true });',
+  '\t\t\t\treturn () => {',
+  '\t\t\t\t\tel.removeEventListener("scroll", onScroll);',
+  '\t\t\t\t\tel.removeEventListener("scrollend", sample);',
+  '\t\t\t\t\tif (sampleTimer !== void 0) window.clearTimeout(sampleTimer);',
+  '\t\t\t\t\tscrollSamplePendingRef.current = false;',
+  '\t\t\t\t};',
+  '\t\t\t}, []);',
+].join('\n');
+const CHAT_SCROLL_FOLLOW_OLD = [
+  'const followRef = (0, react.useRef)(null);',
+  '\t\t\tfollowRef.current = () => {',
+  '\t\t\t\tconst local = listRef.current;',
+].join('\n');
+const CHAT_SCROLL_FOLLOW_NEW = [
+  'const followRef = (0, react.useRef)(null);',
+  '\t\t\tfollowRef.current = () => {',
+  '\t\t\t\tif (scrollSamplePendingRef.current) return;',
+  '\t\t\t\tconst local = listRef.current;',
+].join('\n');
+
+function patchConversationScrollSampling(root = path.resolve(__dirname, '..')) {
+  const files = [
+    path.join(root, 'node_modules', '@deepseek-ai', 'dsh-client-ui-conversation', 'lib', 'client.js'),
+    path.join(root, 'node_modules', '@deepseek-ai', 'dsh-client-ui-chat', 'lib', 'client.js'),
+  ];
+  for (const file of files) {
+    if (!fs.existsSync(file)) continue;
+    const src = fs.readFileSync(file, 'utf8');
+    if (src.includes(CHAT_SCROLL_MARKER)) return { patched: false, file };
+    const anchors = [
+      CHAT_SCROLL_STATE_OLD,
+      CHAT_SCROLL_LAYOUT_OLD,
+      CHAT_SCROLL_EFFECT_OLD,
+      CHAT_SCROLL_FOLLOW_OLD,
+    ];
+    if (!anchors.every((anchor) => src.includes(anchor))) continue;
+    const next = src
+      .replace(CHAT_SCROLL_STATE_OLD, CHAT_SCROLL_STATE_NEW)
+      .replace(CHAT_SCROLL_LAYOUT_OLD, CHAT_SCROLL_LAYOUT_NEW)
+      .replace(CHAT_SCROLL_EFFECT_OLD, CHAT_SCROLL_EFFECT_NEW)
+      .replace(CHAT_SCROLL_FOLLOW_OLD, CHAT_SCROLL_FOLLOW_NEW);
+    fs.writeFileSync(file, next);
+    console.log('[patch-deps] 已补丁会话滚动：惯性/轻微滑动期间不再被流式跟随拉回底部');
+    return { patched: true, file };
+  }
+  console.log('[patch-deps] 会话滚动补丁未匹配（上游版本可能已修复/更新），跳过');
+  return { patched: false };
+}
+
 // dev 闭包注入：dsh-app-boot 从「内置 dsh 包」出发做 BFS 维护 profile 的
 // fallback closure（profiles/node_modules junctions）。配套插件
 // better-sidebar 的依赖 schemastery 只在 app 层 package.json 里（app 闭包），
@@ -151,10 +270,11 @@ function patchDshPluginPnpmHide(root = path.resolve(__dirname, '..')) {
 function main() {
   patchPickerWorker();
   patchSettingsNavScroll();
+  patchConversationScrollSampling();
   injectDshClosureExtras();
   patchDshPluginPnpmHide();
 }
 
 if (require.main === module) main();
 
-module.exports = { patchDshPluginPnpmHide };
+module.exports = { patchConversationScrollSampling, patchDshPluginPnpmHide };
