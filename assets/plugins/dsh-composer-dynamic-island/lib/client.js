@@ -345,12 +345,32 @@ window.__ModuleLoader__.load({
     }
 
     function fixedPositionIsReliable(node) {
-      for (let parent = node.parentElement; parent !== null && parent !== document.body; parent = parent.parentElement) {
+      for (let parent = node.parentElement; parent !== null; parent = parent.parentElement) {
         const style = window.getComputedStyle(parent);
-        if (style.transform !== "none" || style.filter !== "none" || style.perspective !== "none") return false;
+        if (style.transform !== "none" && style.transform !== "matrix(1, 0, 0, 1, 0, 0)") return false;
+        if (style.filter !== "none" || style.perspective !== "none") return false;
+        if ((style.scale && style.scale !== "none") || (style.rotate && style.rotate !== "none") || (style.translate && style.translate !== "none")) return false;
         if (/\b(?:paint|strict|content)\b/.test(style.contain)) return false;
       }
       return true;
+    }
+
+    function fixedPositionOrigin(node) {
+      // Frosted skins establish a fixed containing block without a transform.
+      // Keep React-owned controls in place and convert viewport coordinates.
+      for (let parent = node.parentElement; parent !== null; parent = parent.parentElement) {
+        const style = window.getComputedStyle(parent);
+        if (style.transform !== "none"
+          || (style.backdropFilter && style.backdropFilter !== "none")
+          || (style.webkitBackdropFilter && style.webkitBackdropFilter !== "none")
+          || /\b(?:transform|filter|perspective|backdrop-filter)\b/.test(style.willChange)
+          || /\blayout\b/.test(style.contain)
+          || style.contentVisibility === "auto") {
+          const rect = parent.getBoundingClientRect();
+          return { left: rect.left + parent.clientLeft - parent.scrollLeft, top: rect.top + parent.clientTop - parent.scrollTop };
+        }
+      }
+      return { left: 0, top: 0 };
     }
 
     function discoverCandidates(parts) {
@@ -449,10 +469,11 @@ window.__ModuleLoader__.load({
 
     function measureCandidate(candidate) {
       const rect = candidate.node.getBoundingClientRect();
+      const controlRect = buttonControlOf(candidate.node)?.getBoundingClientRect();
       return {
         candidate,
         node: candidate.node,
-        width: Math.max(24, Math.ceil(rect.width || candidate.node.offsetWidth || 28)),
+        width: Math.max(24, Math.ceil(Math.max(rect.width || candidate.node.offsetWidth || 28, controlRect?.width || 0))),
         height: Math.max(24, Math.ceil(rect.height || candidate.node.offsetHeight || 28)),
       };
     }
@@ -487,7 +508,9 @@ window.__ModuleLoader__.load({
       const panelWidth = Math.max(58, Math.min(maxWidth, contentRight + padding));
       const panelHeight = Math.max(48, Math.min(maxHeight, y + rowHeight + padding));
       const anchorCenter = triggerRect.left + triggerRect.width / 2;
-      const left = Math.max(8, Math.min(anchorCenter - panelWidth / 2, window.innerWidth - panelWidth - 8));
+      const leftEdge = Math.max(8, rowRect.left);
+      const rightEdge = Math.min(window.innerWidth - 8, rowRect.right);
+      const left = Math.max(leftEdge, Math.min(anchorCenter - panelWidth / 2, rightEdge - panelWidth));
       const top = opensUp
         ? Math.max(8, triggerRect.top - panelHeight - 8)
         : Math.min(window.innerHeight - panelHeight - 8, triggerRect.bottom + 8);
@@ -535,7 +558,10 @@ window.__ModuleLoader__.load({
         row.dataset.dshIslandOpen = open ? "true" : "false";
         trigger.setAttribute("aria-expanded", open ? "true" : "false");
       };
-      const open = () => setOpen(true);
+      const open = () => {
+        layout();
+        setOpen(true);
+      };
       const schedulePointerClose = () => {
         window.clearTimeout(closeTimer);
         closeTimer = window.setTimeout(() => {
@@ -559,8 +585,8 @@ window.__ModuleLoader__.load({
       const onKeyDown = (event) => {
         if (event.defaultPrevented || event.key !== "Escape" || row.dataset.dshIslandOpen !== "true") return;
         pinned = false;
-        setOpen(false);
         trigger.focus();
+        setOpen(false);
       };
       const onDocumentPointerDown = (event) => {
         if (!pinned || row.contains(event.target)) return;
@@ -591,8 +617,9 @@ window.__ModuleLoader__.load({
           if (placedNodes.has(item.node)) item.node.setAttribute(ITEM_ATTR, item.candidate.id);
           else item.node.removeAttribute(ITEM_ATTR);
         }
-        panel.style.setProperty("--dshi-panel-left", `${packed.left}px`);
-        panel.style.setProperty("--dshi-panel-top", `${packed.top}px`);
+        const panelOrigin = fixedPositionOrigin(panel);
+        panel.style.setProperty("--dshi-panel-left", `${packed.left - panelOrigin.left}px`);
+        panel.style.setProperty("--dshi-panel-top", `${packed.top - panelOrigin.top}px`);
         panel.style.setProperty("--dshi-panel-width", `${packed.panelWidth}px`);
         panel.style.setProperty("--dshi-panel-height", `${packed.panelHeight}px`);
         panel.dataset.dshiDirection = packed.direction;
@@ -600,8 +627,9 @@ window.__ModuleLoader__.load({
           const { item, x, y } = placement;
           const itemLeft = packed.left + x;
           const itemTop = packed.top + y;
-          item.node.style.setProperty("--dshi-item-left", `${itemLeft}px`);
-          item.node.style.setProperty("--dshi-item-top", `${itemTop}px`);
+          const itemOrigin = fixedPositionOrigin(item.node);
+          item.node.style.setProperty("--dshi-item-left", `${itemLeft - itemOrigin.left}px`);
+          item.node.style.setProperty("--dshi-item-top", `${itemTop - itemOrigin.top}px`);
           if (item.node.classList.contains("team-seat")) {
             const menu = item.node.querySelector(".team-pop");
             const menuWidth = menu instanceof HTMLElement ? Math.max(1, menu.offsetWidth) : 330;
@@ -640,8 +668,9 @@ window.__ModuleLoader__.load({
         item.node.addEventListener("click", scheduleItemLayout);
       }
       row.addEventListener("focusout", scheduleFocusClose);
-      row.addEventListener("keydown", onKeyDown);
+      document.addEventListener("keydown", onKeyDown);
       document.addEventListener("pointerdown", onDocumentPointerDown, true);
+      document.addEventListener("scroll", scheduleItemLayout, true);
       window.addEventListener("resize", layout);
       const resizeObserver = new ResizeObserver(layout);
       resizeObserver.observe(card);
@@ -688,8 +717,9 @@ window.__ModuleLoader__.load({
           panel.style.removeProperty("--dshi-panel-width");
           panel.style.removeProperty("--dshi-panel-height");
           row.removeEventListener("focusout", scheduleFocusClose);
-          row.removeEventListener("keydown", onKeyDown);
+          document.removeEventListener("keydown", onKeyDown);
           document.removeEventListener("pointerdown", onDocumentPointerDown, true);
+          document.removeEventListener("scroll", scheduleItemLayout, true);
           delete card.dataset.dshIslandReady;
           row.removeAttribute("data-dsh-island-row");
           row.removeAttribute("data-dsh-island-open");

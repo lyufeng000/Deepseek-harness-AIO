@@ -4,13 +4,18 @@
   "tag": "v2.1.0",
   "commit": "2ccd12ff807c3bc983defd2177e15be1a416106f",
   "upstreamClientSha256": "22ea2dff2002dfd012d54aec8fd3c91d1d62544d5f54c10de755bdb05fc20f78",
-  "vendoredClientSha256": "8a1cf97bde44a6dc9edc4483cf6ec61280814e45530ac6b6472aee227c14cd1a",
+  "vendoredClientSha256": "07f5a0415ef58db60483d10d39d349739f4bbc4f8974cfbd3c4e4c4286479be3",
   "vendoredClientSha256Encoding": "UTF-8 with LF line endings",
   "localPatches": [
     "cancel queued animation frames and reject layout after disposal",
     "keep the island open while a descendant retains keyboard focus",
     "remove aria-controls ownership of the empty visual backdrop",
     "describe selection separately from viewport-dependent placement",
-    "correct the documented host entry path"
+    "correct the documented host entry path",
+    "convert viewport positions for frosted containing blocks without moving React controls",
+    "refresh popup placement on open and captured scroll, with teardown cleanup",
+    "support identity entrance transforms and measure overflowing button bounds",
+    "keep popup placement within the composer column when side panels are open",
+    "close hover-open popups on Escape after restoring trigger focus"
   ]
 }

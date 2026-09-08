@@ -309,6 +309,13 @@ function main() {
     process.exit(1);
   }
   copyTree(PROFILE_SEED, path.join(RESOURCES, 'profile-seed'));
+  // Patch only the staged copy; unknown plugin builds must stop packaging.
+  execFileSync(process.execPath, [
+    path.join(REPO_ROOT, 'scripts', 'patch-done-pill.cjs'),
+    '--write',
+    path.join(RESOURCES, 'profile-seed', 'profiles', 'web-desktop',
+      'node_modules', '@dsh-external', 'dsh-webui'),
+  ], { stdio: 'inherit' });
   console.log('[stage] 当前 web-desktop 插件与技能快照完成');
 
   // 2) 生产依赖闭包
