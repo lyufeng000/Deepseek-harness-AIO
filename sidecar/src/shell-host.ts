@@ -17,6 +17,7 @@ import type { UpdaterCtx } from './lib/updater';
 
 /// desktop-core 装配结果的最小结构面（完整类型由 desktop-core 模块承载）。
 export interface DesktopCoreLike {
+  upgradePreflight: () => { ok: true };
   migrateAndSync: () => Promise<unknown> | unknown;
   syncAll: () => Promise<unknown> | unknown;
   koffiPreflight: () => Promise<unknown> | unknown;
@@ -44,7 +45,6 @@ export interface DesktopCoreLike {
   balancePricesGet: (model: unknown) => Promise<unknown> | unknown;
   balancePricesSet: (model: unknown, prices: unknown) => { ok: boolean };
   balancePricesReset: (model: unknown) => { ok: boolean };
-  processPendingMarketOps: () => Promise<unknown> | unknown;
   desktopProfile: () => string;
 }
 
@@ -130,6 +130,7 @@ async function refreshBalanceAndEmit(): Promise<unknown> {
 // 方法表：ns.fn → handler(params)。全部 async 化以便统一错误处理。
 const METHODS: Record<string, RpcHandler> = {
   // ---- profile 编排 ----
+  'profile.upgradePreflight': () => core.upgradePreflight(),
   'profile.migrateAndSync': (_p) => core.migrateAndSync(),
   'profile.syncAll': (_p) => core.syncAll(),
 
@@ -180,9 +181,6 @@ const METHODS: Record<string, RpcHandler> = {
   'updater.rollbackToPrevious': () => require('./lib/updater').rollbackToPrevious(settingsCtx),
   'updater.rollback': () => require('./lib/updater').rollback(settingsCtx),
   'updater.confirmHealthy': () => require('./lib/updater').confirmPreviousAgentHealthy(settingsCtx),
-
-  // ---- 插件市场排队任务 ----
-  'market.processPending': () => core.processPendingMarketOps(),
 };
 
 // 心跳保活：stdin EOF 即退出（壳退出时关闭管道 → sidecar 自然收场）。

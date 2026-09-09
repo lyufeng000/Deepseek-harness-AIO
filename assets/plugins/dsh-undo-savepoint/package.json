@@ -25,7 +25,7 @@
     },
     "client": {
       "platform": "web",
-      "inject": ["slots", "locale"]
+      "inject": ["@deepseek-ai/dsh-client-ui-renderer", "@deepseek-ai/dsh-client-locale"]
     }
   },
   "files": ["lib", "tools", "cordis.patch.yml"],

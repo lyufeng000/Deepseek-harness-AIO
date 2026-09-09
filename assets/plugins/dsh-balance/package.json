@@ -2,7 +2,7 @@
   "name": "@deepseek-ai/dsh-balance",
   "version": "0.1.0",
   "private": true,
-  "description": "DeepSeek 账户余额 + 本轮会话费用估算 + 价格设置（DSH Desktop 配套客户端插件：对话统计栏 dock + 设置页「价格设置」自定义 Token 价格）",
+  "description": "DSH Desktop 设置页「价格设置」：自定义各模型高峰/空闲 Token 价格，仅提供设置界面",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -13,7 +13,7 @@
   "license": "MIT",
   "dsh": {
     "client": {
-      "inject": ["@deepseek-ai/dsh-client-ui-conversation"],
+      "inject": ["@deepseek-ai/dsh-client-ui-slots"],
       "platform": "web"
     }
   },

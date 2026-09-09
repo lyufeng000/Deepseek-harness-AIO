@@ -22,22 +22,6 @@ import { dirname, join } from 'node:path';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const skinsDir = join(root, 'assets', 'skins');
 
-// Skins known to inject fixed top/bottom chrome bars (titlebar / statusbar).
-const CHROME_SKINS = ['xp', 'miku', 'qq98', 'trading', 'ths'];
-
-/** Read a skin's bundled client bundle. */
-function skinClient(skin) {
-  const file = join(skinsDir, skin, 'lib', 'client.js');
-  return readFileSync(file, 'utf8');
-}
-
-/** All numeric `z-index:N` values appearing anywhere in a skin's CSS. */
-function zIndexValues(src) {
-  const out = [];
-  for (const m of src.matchAll(/z-index:\s*(\d+)/g)) out.push(Number(m[1]));
-  return out;
-}
-
 /**
  * z-index 声明是否落在「模态层容器」规则上（皮肤若有意识把模态层本身
  * 抬到 4000，让设置弹窗盖过所有皮肤 chrome 与默认 1000 层）。这类值豁免
@@ -47,22 +31,6 @@ function zIndexValues(src) {
 function isModalLayerRule(src, m) {
   const before = src.slice(Math.max(0, m.index - 120), m.index);
   return /VOzbGW_overlay\s*\]?\{?\s*$/.test(before) || before.includes('VOzbGW_overlay');
-}
-
-for (const skin of CHROME_SKINS) {
-  test(`skin "${skin}" keeps its chrome bars below the app modal layer (z-index < 1000)`, () => {
-    const src = skinClient(skin);
-    const values = zIndexValues(src);
-    assert.ok(values.length > 0, `expected ${skin} to declare z-index values`);
-    for (const m of src.matchAll(/z-index:\s*(\d+)/g)) {
-      const v = Number(m[1]);
-      assert.ok(
-        v < 1000 || isModalLayerRule(src, m),
-        `${skin} declares z-index:${v} which is at/above the web UI modal layer (1000); ` +
-          'its fixed titlebar/statusbar would cover the Settings modal'
-      );
-    }
-  });
 }
 
 test('every bundled skin keeps its z-index values below the modal layer', () => {

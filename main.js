@@ -81,8 +81,6 @@ let balanceCache = null;
 let balanceTimer = null;
 // V4 退出清理：before-quit 只允许进入一次异步清理（防止重复触发）。
 let shutdownInProgress = false;
-// V4 退出清理：当前正在执行的插件市场排队任务子进程（退出时强杀）。
-let marketOpChild = null;
 // 渲染进程崩溃/挂起自恢复状态机（renderer-recovery.js，上游 Issue #9 修复）。
 let recovery = null;
 // koffi 预检失败时注入的目录选择器降级 overlay 路径（koffi-preflight.js）。
@@ -102,19 +100,14 @@ let testForceUnsafeOnce = process.env.DSH_DESKTOP_TEST_FORCE_UNSAFE === '1';
 //      解析被换血（版本错位 / npx 缓存清理后悬空）。
 // 桌面端从此默认运行在独立 profile `web-desktop`（DSH_HOME 不变：会话、
 // API Key、settings.yaml 依旧共享）；junction 归属由 plugin-guard 周期守卫。
-// 旧共享模式仍可用（settings.shareWebProfile = true），仅供特殊需要。
+// AIO 固定使用独立 profile，避免从旧 web profile 继承第三方插件。
 // ---------------------------------------------------------------------------
 const DESKTOP_PROFILE = 'web-desktop';
 // 与官方 web profile 出厂模板一致（@deepseek-ai/dsh-base + dsh-web-app）。
 const DESKTOP_PROFILE_BUNDLES = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'];
 
 function desktopProfile() {
-  try {
-    const s = updater.loadSettings(updCtx());
-    return s.shareWebProfile === true ? 'web' : DESKTOP_PROFILE;
-  } catch {
-    return DESKTOP_PROFILE;
-  }
+  return DESKTOP_PROFILE;
 }
 
 function desktopProfileDir() {
@@ -1287,15 +1280,10 @@ async function restartWebServiceCore() {
     const oldProc = serverProc;
     killTree(serverProc);
     serverProc = null;
-    // 等旧进程真正退出（DLL 文件锁随之释放），再执行插件市场排队任务，
-    // 最后才拉起新服务 —— 排队安装正需要这个"无锁窗口"。
+    // 等旧进程真正退出（DLL 文件锁随之释放），再同步内置插件并拉起服务。
     await waitForProcExit(oldProc, 20000);
-    await processPendingMarketOps();
-    // pnpm（排队安装/卸载）会重写 profile node_modules：可能删掉配套插件
-    // 副本、重新 hoist 核心包。服务拉起前重建 + 清理，顺序不能反。
     syncCompanionPlugins();
     healProfileModules();
-    await restoreKeptArtifacts(desktopProfile());
     const url = await startAndShowGuarded();
     log('service', 'dsh web 服务已重启: ' + url);
     return { ok: true, url };
@@ -1458,7 +1446,7 @@ function registerChromeIpc() {
         return {
           ok: true,
           profile: desktopProfile(),
-          shareWebProfile: st.shareWebProfile === true,
+          shareWebProfile: false,
           snapshots: g.listSnapshots().slice(0, 20),
           incidents: g.listIncidents().slice(0, 20),
           lastGood: g.lastGoodSnapshot(),
@@ -1529,8 +1517,7 @@ function registerChromeIpc() {
     }
   });
 
-  // 插件更新（V4.3，设置页「插件 → 更新」标签，dsh-plugin-marketplace 插件
-  // 消费）：内置插件上游更新 —— 检测清单 / 手动更新单个 / 自动更新开关。
+  // 内置插件上游更新：检测清单 / 手动更新单个 / 自动更新开关。
   // 数据与动作都在主进程完成（npm 镜像链 + 覆盖层），Web 端只做展示。
   ipcMain.handle('dsh:plugin-updates', async (event, { force = false } = {}) => {
     if (!mainWindow || event.sender !== mainWindow.webContents) return null;
@@ -1744,51 +1731,13 @@ function startBalanceLoop() {
 }
 
 const COMPANION_PLUGINS = [
-  // 余额小部件（@deepseek-ai/dsh-balance，官方私有包，随包分发）：对话底部
-  // 统计条下方的余额/会话费用估算 + 峰谷定价时段条（高峰中/空闲中倒计时）
-  // + 设置页「价格设置」。数据源：主进程 balance.js 查询
-  // https://api.deepseek.com/user/balance 并推 dsh:balance 事件（见
-  // refreshBalance / startBalanceLoop）。与 dsh-offpeak（事前拦截）互补。
   { id: 'balance', name: '@deepseek-ai/dsh-balance' },
-  // 皮肤切换（设置页「皮肤」tab，host 半边重写 ui-skin-* 激活行）。
-  { id: 'skin-switch', name: '@deepseek-ai/dsh-skin-switch' },
-  // 社区插件市场（awesome-dsh-plugin.com 目录）：内置分发，替换早期 npm 检索版市场。
-  { id: 'dsh-market-plugin', name: '@sanqi-normal/dsh-webui-market-plugin', dir: 'dsh-webui-market' },
-  // 插件市场入口（设置页「插件 → 插件市场/更新」tab）：浏览/搜索 npm 上的
-  // dsh 插件并一键安装到 web profile；更新标签聚合内置插件上游更新。
-  // （4.4.0 上游漏登记，v4Lite 补上让「插件市场」tab 生效。）
-  { id: 'plugin-marketplace', name: '@deepseek-ai/dsh-plugin-marketplace', dir: 'dsh-plugin-marketplace' },
-  // VSCode 风格右侧边栏（文件树 / 编辑器 / 终端 / Git，按会话隔离）。
-  // lib/ 预编译自包含（codemirror、xterm 已内嵌），服务端仅额外依赖
-  // schemastery（已加入 app 闭包，见 package.json）。
   { id: 'better-sidebar', name: 'dsh-better-sidebar', dir: 'dsh-better-sidebar' },
-  // 输入区灵动岛：将按钮型输入扩展收拢到固定触发器，不搬移 React 节点。
   { id: 'composer-dynamic-island', name: 'dsh-composer-dynamic-island', dir: 'dsh-composer-dynamic-island' },
-  // 自动压缩：监听 contextPressure 投影，接近上下文上限（默认 80%）时
-  // 自动向当前会话发送 /compact（dsh 原生命令，压缩事务由内核执行）。
   { id: 'auto-compact', name: 'dsh-auto-compact', dir: 'dsh-auto-compact' },
-  // 插件保护中心 UI：快照列表/一键回滚/健康检查/事故报告，经桌面壳
-  // IPC（guard:action）驱动 plugin-guard.js 引擎。
   { id: 'plugin-shield', name: 'dsh-plugin-shield', dir: 'dsh-plugin-shield' },
-  // 插件启停管理：设置页「插件 → 管理」标签，不重启切换插件启停
-  // （IPC dsh:plugin-list / dsh:plugin-set-enabled，见下方接线）。
   { id: 'plugin-manager', name: '@deepseek-ai/dsh-plugin-manager' },
-  // 峰谷价格卫士（dsh-offpeak，christophersmith2737-commits，MIT）：DeepSeek
-  // 峰谷定价（2026-08-17 起）高峰时段（北京时间 9-12 / 14-18 点）发送前
-  // 拦截提醒，可一键继续或定时到闲时价自动执行。自带 host 路由
-  // （/ds-offpeak/*）与浏览器端提醒，无壳层依赖；可在「设置 → 插件 → 管理」
-  // 关闭。GitHub 分发锁定拷贝，不登记上游更新源。
-  { id: 'offpeak', name: 'dsh-offpeak', dir: 'dsh-offpeak' },
-  // 崩溃急救/撤销回退（dsh-undo-savepoint，lire1131，MIT）：配置文件 + 插件
-  // 代码树快照、undo/redo、一键安全模式、密钥脱敏 vault。与插件保护中心
-  // （配置面快照）和「文件」还原（会话内改动）互补，覆盖「配置改坏、dsh
-  // 起不来」的急救场景。GitHub 分发锁定拷贝（npm 未发布）。
   { id: 'dsh-undo', name: 'dsh-undo-savepoint', dir: 'dsh-undo-savepoint' },
-  // 社区插件市场 dsh-market（github.com/dsh-market/dsh-market，MIT）：设置 →
-  // 插件市场。1250+ 插件目录、主题一键切换、备份/WebDAV/Gist 恢复、插件级
-  // 更新与自更新渠道。要求 dsh ≥ 0.1.0-rc.6（当前内核 0.1.1-rc.2 满足）。
-  // 与既有 dsh-webui-market / dsh-plugin-marketplace 并存，互不接管。
-  { id: 'dsh-market', name: 'dshmarket', dir: 'dsh-market' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -1796,17 +1745,13 @@ const COMPANION_PLUGINS = [
 //
 // 只登记「上游仍在 npm / GitHub 发布」的社区插件 —— 内置分发的副本可以
 // 跟随上游修复而更新。EAC 独占插件（package.json 标记 private，如
-// dsh-skin-switch / dsh-plugin-shield / dsh-auto-compact
+// dsh-plugin-shield / dsh-auto-compact
 // / dsh-better-sidebar 之外的私有包）绝不登记。
 // 运行时 npm 404（未上架/改名）优雅降级为「无上游」，绝不阻塞。
 // ---------------------------------------------------------------------------
 const PLUGIN_UPDATE_SOURCES = {
   'better-sidebar': { npm: 'dsh-better-sidebar' },
   'composer-dynamic-island': { github: 'says693/dsh-composer-dynamic-island' },
-  'dsh-market-plugin': { npm: '@sanqi-normal/dsh-webui-market-plugin' },
-  // dsh-market 自身也持续发版（stable/dev 渠道由其设置卡管理）。
-  'dsh-market': { npm: 'dshmarket' },
-  // GitHub 分发（npm 未发布）：dsh-undo-savepoint。
   'dsh-undo': { github: 'lire1131/dsh-undo-savepoint' },
 };
 
@@ -1838,11 +1783,6 @@ function builtinPluginSourceDir(dirName) {
   if (vOverlay && vAssets && updater.compareVersions(vOverlay, vAssets) < 0) return assets;
   return overlay;
 }
-
-// 皮肤包目录：assets/skins/<id>/。每个皮肤是一个完整的 dsh client 插件包
-// （package.json + lib/ + skin.json + LICENSE/NOTICE），随桌面端分发；
-// 默认全部以 disabled: true 注册（不启用任何皮肤），由「设置 → 皮肤」切换。
-const SKINS_DIR = path.join(__dirname, 'assets', 'skins');
 
 function readJsonFile(file) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
@@ -1933,7 +1873,6 @@ function copyPluginPackage(profileDirP, src, name) {
   // 内置插件自带的嵌套 node_modules（vendored 运行时依赖）：放在包内部，
   // pnpm 重写 profile node_modules 顶层时不会波及，插件保持自包含。
   copyDir('node_modules');
-  // dsh-webui-market 的离线目录快照（官网不可达时的兜底数据）。
   copyDir('data');
   // 带运行时静态资源的插件（动画帧、PyInstaller helper 等）。
   copyDir('assets');
@@ -1968,105 +1907,8 @@ function healProfileModules() {
   }
 }
 
-// ---------------------------------------------------------------------------
-// 插件市场排队任务：服务运行中安装/卸载撞上 Windows 文件锁（EPERM，如
-// sqlite-vec 的 vec0.dll 被运行中的 web 进程加载）时，市场插件把任务写进
-// profile 的 .dsh-market-pending.json。这里在"无服务进程持锁"的窗口期
-// （应用启动时 / 原地重启 kill 完旧进程后）用 dsh CLI 完成它。
-// ---------------------------------------------------------------------------
-const MARKER_NAME = '.dsh-market-pending.json';
-const MARKER_MAX_ATTEMPTS = 3;
-
-// 删除排队标记文件。曾有残留进程短暂持锁导致 rmSync 静默失败、标记
-// "复活"并反复触发 pnpm 的案例 —— 这里带重试 + 改名兜底，并返回是否
-// 真正删除，调用方据此决定是否放弃任务。
-function removeMarkerFile(file) {
-  try {
-    fs.rmSync(file, { force: true, maxRetries: 5, retryDelay: 200 });
-  } catch { /* 落到改名兜底 */ }
-  if (!fs.existsSync(file)) return true;
-  try {
-    fs.renameSync(file, file + '.stale-' + Date.now());
-  } catch { /* 锁着也无可奈何，交给 attempts 上限 */ }
-  return !fs.existsSync(file);
-}
-
-function pendingMarketMarkers() {
-  const out = [];
-  try {
-    const home = dshHome || DEFAULT_DSH_HOME;
-    const profilesRoot = path.join(home, 'profiles');
-    if (!fs.existsSync(profilesRoot)) return out;
-    for (const entry of fs.readdirSync(profilesRoot, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      const marker = path.join(profilesRoot, entry.name, MARKER_NAME);
-      if (!fs.existsSync(marker)) continue;
-      try {
-        // 去掉可能的 UTF-8 BOM（外部编辑器写入的标记）再解析。
-        const job = JSON.parse(fs.readFileSync(marker, 'utf8').replace(/^\uFEFF/, ''));
-        if (job && typeof job.target === 'string' && job.target
-          && typeof job.profile === 'string' && /^[A-Za-z0-9_-]+$/.test(job.profile)
-          && (job.kind === 'install' || job.kind === 'uninstall')) {
-          // V4.2：旧版 host 可能把目录默认 profile 'web' 写进标记（桌面壳跑
-          // 在 web-desktop，profiles/web 不存在）—— 归一化后再执行，避免对
-          // 不存在的 profile 跑 pnpm（spawn 报 node.exe ENOENT）。
-          job.profile = job.profile === 'web' ? desktopProfile() : job.profile;
-          out.push({ marker, job });
-        } else {
-          log('market-pending', '标记字段不完整，已删除: ' + marker);
-          removeMarkerFile(marker);
-        }
-      } catch (err) {
-        log('market-pending', `标记损坏，已删除: ${marker} (${err.message})`);
-        removeMarkerFile(marker);
-      }
-    }
-  } catch (err) {
-    log('market-pending', '扫描排队任务失败: ' + err.message);
-  }
-  return out;
-}
-
-function finishMarketMarker(marker, job, attempts, ok, tail) {
-  if (ok) {
-    log('market-pending', '排队任务完成: ' + (job.label || job.target));
-    if (!removeMarkerFile(marker)) {
-      log('market-pending', '警告: 排队标记删除失败（文件被占用？），已尝试改名兜底');
-    }
-    return;
-  }
-  if (attempts >= MARKER_MAX_ATTEMPTS) {
-    const last = String(tail || '').split(/\r?\n/).filter(Boolean).pop() || '';
-    log('market-pending', `排队任务连续 ${attempts} 次失败，放弃并清除: ${job.label || job.target}${last ? ' — ' + last.slice(0, 200) : ''}`);
-    removeMarkerFile(marker);
-    return;
-  }
-  try { fs.writeFileSync(marker, JSON.stringify({ ...job, attempts }, null, 2)); } catch {}
-  log('market-pending', '排队任务失败（下次启动重试）: ' + (job.label || job.target));
-}
-
-// ---------------------------------------------------------------------------
-// 第三方插件构建产物保留（V4）：pnpm 重写 profile node_modules 后，把快照
-// 里「磁盘上消失」的文件补回去。实现与市场 host 半边共用一份（ESM）：
-// assets/plugins/dsh-webui-market/lib/artifact-keep.mjs。
-// ---------------------------------------------------------------------------
-const ARTIFACT_KEEP_MODULE = path.join(__dirname, 'assets', 'plugins', 'dsh-webui-market', 'lib', 'artifact-keep.mjs');
-let artifactKeepMod = null;
-
-async function artifactKeep() {
-  if (artifactKeepMod) return artifactKeepMod;
-  try {
-    artifactKeepMod = await import(pathToFileURL(ARTIFACT_KEEP_MODULE).href);
-  } catch (err) {
-    log('artifact-keep', '模块加载失败: ' + err.message);
-    artifactKeepMod = {};
-  }
-  return artifactKeepMod;
-}
-
-// V4.2：pnpm allowBuilds 自动放行（排队任务 + 守护启动失败链共用同一份
-// ESM：assets/plugins/dsh-webui-market/lib/allow-builds.mjs）。
-const ALLOW_BUILDS_MODULE = path.join(__dirname, 'assets', 'plugins', 'dsh-webui-market', 'lib', 'allow-builds.mjs');
+// pnpm allowBuilds 自动放行（守护启动失败链使用）。
+const ALLOW_BUILDS_MODULE = path.join(__dirname, 'assets', 'runtime', 'plugin-install', 'allow-builds.mjs');
 let allowBuildsMod = null;
 
 async function allowBuilds() {
@@ -2078,165 +1920,6 @@ async function allowBuilds() {
     allowBuildsMod = {};
   }
   return allowBuildsMod;
-}
-
-function profileDirFor(profile) {
-  const home = dshHome || DEFAULT_DSH_HOME;
-  return path.join(home, 'profiles', profile);
-}
-
-function artifactCacheDirFor(profile) {
-  const home = dshHome || DEFAULT_DSH_HOME;
-  return path.join(home, 'plugin-artifact-cache', profile);
-}
-
-// 由桌面壳重建的包（配套插件 + 皮肤）不进快照：丢了也会被 syncCompanion
-// Plugins / 皮肤同步立刻补回，缓存它们只浪费空间。
-function managedPackageNames() {
-  const names = COMPANION_PLUGINS.map((p) => p.name);
-  try {
-    for (const entry of fs.readdirSync(SKINS_DIR, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      const pkg = readJsonFile(path.join(SKINS_DIR, entry.name, 'package.json'));
-      if (pkg && typeof pkg.name === 'string') names.push(pkg.name);
-    }
-  } catch {}
-  return names;
-}
-
-// 启动兜底回填：上次 pnpm 运行后若应用异常退出没来得及回填（或回填被
-// 中断），这里补上。只补缺失文件，安全幂等。
-async function restoreKeptArtifacts(profile) {
-  const ak = await artifactKeep();
-  if (typeof ak.restoreArtifacts !== 'function') return;
-  try {
-    ak.restoreArtifacts(profileDirFor(profile), artifactCacheDirFor(profile), {
-      log: (m) => log('artifact-keep', m),
-    });
-  } catch (err) {
-    log('artifact-keep', '回填失败: ' + err.message);
-  }
-}
-
-// 必须在"没有任何 dsh web 进程持锁"时调用；调用方负责先等待旧进程退出。
-async function processPendingMarketOps() {
-  const items = pendingMarketMarkers();
-  if (items.length === 0) return;
-  const nodeBin = nodeExe();
-  const bin = dshBin();
-  if (!fs.existsSync(nodeBin) || !fs.existsSync(bin)) {
-    log('market-pending', '找不到 node/dsh CLI，跳过排队任务');
-    return;
-  }
-  log('market-pending', `发现 ${items.length} 个排队任务，开始执行（Web 服务启动前，无文件锁）`);
-  // V4：pnpm 即将重写 node_modules —— 先快照第三方包（含人工补齐的
-  // lib/ 等构建产物），任务结束后回填被清掉的部分（meow-memory 修复）。
-  const profiles = [...new Set(items.map((it) => it.job.profile))];
-  const ak = await artifactKeep();
-  if (typeof ak.snapshotArtifacts === 'function') {
-    for (const profile of profiles) {
-      try {
-        ak.snapshotArtifacts(profileDirFor(profile), artifactCacheDirFor(profile), {
-          managedNames: managedPackageNames(),
-          log: (m) => log('artifact-keep', m),
-        });
-      } catch (err) {
-        log('artifact-keep', `snapshot ${profile} 失败: ` + err.message);
-      }
-    }
-  }
-  await new Promise((resolve) => {
-    let idx = 0;
-    // V4.2：allowBuilds 自动放行后的重试只允许一次（同一 marker）。
-    const retriedMarkers = new Set();
-    const next = async () => {
-      if (idx >= items.length) {
-        // pnpm 可能重新 hoist 出 @deepseek-ai 遮蔽拷贝，装完立刻清理，
-        // 避免模块双实例（Symbol 身份不一致）问题拖到下次启动。
-        healProfileModules();
-        return resolve();
-      }
-      const { marker, job } = items[idx];
-      const retried = retriedMarkers.has(marker);
-      const attempts = Number(job.attempts || 0) + 1;
-      const action = job.kind === 'uninstall' ? 'remove' : 'add';
-      // 安装前快照（保护中心）：排队任务改的是 profile 配置面，出问题可
-      // 一键/自动回滚到这里。
-      ensureGuard().snapshot('market:' + job.target);
-      log('market-pending', `执行(${attempts}/${MARKER_MAX_ATTEMPTS}): dsh plugin --profile ${job.profile} ${action} ${job.target}`);
-      const child = spawn(nodeBin, [bin, 'plugin', '--profile', job.profile, action, job.target], {
-        cwd: userDataDir,
-        // CI=true 与市场插件 host 侧一致：pnpm v10 无 TTY 时对被忽略的构建
-        // 脚本（如 node-llama-cpp）静默放行，而不是 ERR_PNPM_IGNORED_BUILDS 硬失败。
-        env: { ...childEnv(), CI: 'true' },
-        windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
-      });
-      marketOpChild = child;
-      let tail = '';
-      const onData = (c) => {
-        const text = c.toString();
-        tail = (tail + text).slice(-8000);
-        for (const line of text.split(/\r?\n/)) {
-          const s = line.trim();
-          // Progress: \r 进度条不进日志，只保留有信息量的行。
-          if (s && !/^Progress:/.test(s)) log('market-pending', s.slice(0, 300));
-        }
-      };
-      child.stdout.on('data', onData);
-      child.stderr.on('data', onData);
-      const timer = setTimeout(() => {
-        log('market-pending', '排队任务超时（5 分钟），强制终止');
-        try { spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }); } catch {}
-      }, 5 * 60 * 1000);
-      child.on('error', (err) => {
-        clearTimeout(timer);
-        if (marketOpChild === child) marketOpChild = null;
-        finishMarketMarker(marker, job, attempts, false, String(err.message));
-        idx += 1;
-        next();
-      });
-      child.on('close', async (code) => {
-        clearTimeout(timer);
-        if (marketOpChild === child) marketOpChild = null;
-        // V4.2：pnpm 封锁构建脚本硬失败时，从输出解析包名、自动写入
-        // pnpm-workspace.yaml 的 allowBuilds（兼容旧名 onlyBuiltDependencies）
-        // 后重试同一任务一次（不消耗 attempts）。
-        if (code !== 0 && !retried) {
-          try {
-            const ab = await allowBuilds();
-            const keys = (ab.parseBlockedBuildKeys || (() => []))(tail);
-            if (keys.length > 0) {
-              const r = await ab.ensureAllowBuilds(path.join(profileDirFor(job.profile), 'pnpm-workspace.yaml'), keys);
-              if (r && r.wrote) {
-                log('market-pending', `[allowBuilds] 已自动放行 ${r.added.join(', ')}，自动重试`);
-                retriedMarkers.add(marker);
-                next();
-                return;
-              }
-            }
-          } catch (err) {
-            log('market-pending', '[allowBuilds] 自动放行失败: ' + String((err && err.message) || err));
-          }
-        }
-        finishMarketMarker(marker, job, attempts, code === 0, tail);
-        idx += 1;
-        next();
-      });
-    };
-    next();
-  });
-  // pnpm 重写完成：回填被清掉的第三方构建产物（lib/ 等）。
-  if (typeof ak.restoreArtifacts === 'function') {
-    for (const profile of profiles) {
-      try {
-        ak.restoreArtifacts(profileDirFor(profile), artifactCacheDirFor(profile), {
-          log: (m) => log('artifact-keep', m),
-        });
-      } catch (err) {
-        log('artifact-keep', `restore ${profile} 失败: ` + err.message);
-      }
-    }
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -2535,21 +2218,7 @@ function syncCompanionPlugins() {
         log('boot', '内置接管通知发送失败: ' + err.message);
       }
     }
-    // 内置皮肤：行 id 取皮肤包 skin.json 的 wiring.id（ui-skin-*）。
-    for (const entry of fs.readdirSync(SKINS_DIR, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      const src = path.join(SKINS_DIR, entry.name);
-      const pkg = readJsonFile(path.join(src, 'package.json'));
-      if (!pkg || typeof pkg.name !== 'string' || !pkg.name.includes('/')) continue;
-      const skin = readJsonFile(path.join(src, 'skin.json'));
-      const rowId = skin && skin.wiring && typeof skin.wiring.id === 'string' ? skin.wiring.id : '';
-      if (!/^ui-skin-[\w-]+$/.test(rowId)) continue;
-      copyPluginPackage(profileDirP, src, pkg.name);
-      pending.push({ id: rowId, name: pkg.name, disabled: true });
-    }
-    // 内置插件清单标记：插件市场据此把目录里的同名插件标为「已内置」并
-    // 拒绝重复安装 —— 内置包每次启动都被重新同步，市场覆盖安装会产生
-    // duplicate loader entry / 模块双实例，必须从源头拦截。
+    // 内置插件清单标记供同步与碰撞防护使用。
     try {
       const builtinNames = pending.map((p) => p.name);
       const marker = path.join(profileDirP, '.dsh-builtin-plugins.json');
@@ -2561,7 +2230,7 @@ function syncCompanionPlugins() {
     } catch (err) {
       log('boot', '写入内置插件清单失败: ' + err.message);
     }
-    // 注册到 profile 的 patch 层（幂等：已有行不重写，用户选择的皮肤/disabled 状态保留）。
+    // 注册到 profile 的 patch 层（幂等：已有行不重写，disabled 状态保留）。
     const patchFile = path.join(profileDirP, 'cordis.patch.yml');
     let patch = '';
     try { patch = fs.readFileSync(patchFile, 'utf8'); } catch { patch = ''; }
@@ -2603,10 +2272,8 @@ function syncCompanionPlugins() {
     }
     if (changed) {
       fs.writeFileSync(patchFile, patch);
-      log('boot', '已同步配套插件/皮肤到 web profile: ' + pending.map((p) => p.id).join(', '));
+      log('boot', '已同步配套插件到 web profile: ' + pending.map((p) => p.id).join(', '));
     }
-    // 迁移带来的皮肤选择（migrateFromSharedWebProfile 记录）在此落位。
-    applyLegacySkinChoice();
   } catch (err) {
     log('boot', '同步配套插件失败: ' + err.message);
   }
@@ -2749,132 +2416,6 @@ function maintainShortcuts() {
 
 function warnTempRun() {
   // v4Lite 无便携版，安装版始终位于固定目录：无需临时目录告警。
-}
-
-// ---------------------------------------------------------------------------
-// 一次性迁移：桌面端从共享 web profile 切到专属 web-desktop profile。
-//
-// 只做三件事，全部幂等：
-//   1. 记住用户在旧 profile 里启用的皮肤（迁移后在专属 profile 里复活）；
-//   2. 清掉旧 web profile 里桌面端写入的配套插件行 + 拷贝的配套包 + 内置
-//      清单标记 —— 原生 CLI 从此加载干净的 web profile（冲突面消除）；
-//   3. 标记 settings.desktopProfileMigrated，永不重复执行。
-// 用户用市场装进旧 profile 的插件（package.json bundles）是原生端资产，
-// 一律不动；桌面端如需继续使用，重新从市场安装即可（有保护中心兜底）。
-function migrateFromSharedWebProfile() {
-  try {
-    const s = updater.loadSettings(updCtx());
-    if (s.desktopProfileMigrated) return;
-    s.desktopProfileMigrated = new Date().toISOString();
-    updater.saveSettings(updCtx(), s); // 先落标记：即使下面失败也不反复折腾
-    if (s.shareWebProfile === true) return; // 用户显式选择共享模式
-
-    const home = dshHome || DEFAULT_DSH_HOME;
-    const oldDir = path.join(home, 'profiles', 'web');
-    const marker = path.join(oldDir, '.dsh-builtin-plugins.json');
-    if (!fs.existsSync(marker)) return; // 旧版本从没在共享 profile 跑过桌面端
-    const builtinNames = readJsonFile(marker)?.names || [];
-
-    // 1) 提取用户启用的皮肤行 id。
-    let enabledSkin = null;
-    const patchFile = path.join(oldDir, 'cordis.patch.yml');
-    let oldPatch = '';
-    try { oldPatch = fs.readFileSync(patchFile, 'utf8'); } catch { oldPatch = ''; }
-    {
-      const lines = oldPatch.split(/\r?\n/);
-      for (let i = 0; i < lines.length; i++) {
-        const m = /^- id: (ui-skin-[\w-]+)\s*$/.exec(lines[i]);
-        if (!m) continue;
-        let disabled = false;
-        for (let j = i + 1; j < lines.length; j++) {
-          if (/^- /.test(lines[j])) break;
-          if (/^\s+disabled:\s*true/.test(lines[j])) disabled = true;
-        }
-        if (!disabled) enabledSkin = m[1];
-      }
-    }
-
-    // 2) 清理旧 profile 的桌面端痕迹。
-    const rowIdSet = new Set();
-    for (const p of COMPANION_PLUGINS) rowIdSet.add(p.id);
-    for (const id of extractPatchRowIds(oldPatch)) {
-      if (/^ui-skin-[\w-]+$/.test(id)) rowIdSet.add(id);
-    }
-    const cleaned = removePatchRowsById(oldPatch, rowIdSet);
-    if (cleaned.removed.length) fs.writeFileSync(patchFile, cleaned.patch);
-    for (const name of builtinNames) {
-      try { fs.rmSync(path.join(oldDir, 'node_modules', ...String(name).split('/')), { recursive: true, force: true, maxRetries: 2 }); } catch {}
-    }
-    try { fs.rmSync(marker, { force: true }); } catch {}
-    log('boot', '已迁移到桌面专属 profile（' + DESKTOP_PROFILE + '）：旧 web profile 清理了 ' + cleaned.removed.length + ' 条桌面配套行 / ' + builtinNames.length + ' 个配套包');
-
-    // 3) 在专属 profile 里复活用户选择的皮肤（等 syncCompanionPlugins 写完
-    //    全部皮肤行之后执行，见 applyLegacySkinChoice）。
-    if (enabledSkin) {
-      const s2 = updater.loadSettings(updCtx());
-      s2.legacySkinChoice = enabledSkin;
-      updater.saveSettings(updCtx(), s2);
-      log('boot', '将迁移用户皮肤选择: ' + enabledSkin);
-    }
-  } catch (err) {
-    log('boot', '共享 profile 迁移失败（不影响启动）: ' + err.message);
-  }
-}
-
-function extractPatchRowIds(patch) {
-  const ids = [];
-  const re = /^\s*-\s*id:\s*([\w.-]+)\s*$/gm;
-  let m;
-  while ((m = re.exec(String(patch || ''))) !== null) ids.push(m[1]);
-  return ids;
-}
-
-// 按 id 集合删除 patch 里的 insert 行块（与 removeBundledRowDuplicates 同
-// 语法约定：id 紧跟 `- insert:` 之后）。
-function removePatchRowsById(patch, ids) {
-  const removed = [];
-  if (typeof patch !== 'string' || patch === '' || !ids || ids.size === 0) return { patch, removed };
-  const lines = patch.split(/\r?\n/);
-  const out = [];
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (/^-\s*insert:/.test(line)) {
-      const mid = /^\s*-\s*id:\s*([\w.-]+)\s*$/.exec(lines[i + 1] || '');
-      if (mid && ids.has(mid[1])) {
-        removed.push(mid[1]);
-        let j = i + 1;
-        while (j < lines.length && !/^-\s*insert:/.test(lines[j]) && /^#/.test(lines[j]) === false && /^\s+\S/.test(lines[j])) j++;
-        i = j - 1;
-        continue;
-      }
-    }
-    out.push(line);
-  }
-  let text = out.join('\n').replace(/\n{3,}/g, '\n\n');
-  if (!text.endsWith('\n')) text += '\n';
-  return { patch: text, removed };
-}
-
-// syncCompanionPlugins 之后调用一次：把迁移带来的皮肤选择落到新 profile。
-function applyLegacySkinChoice() {
-  try {
-    const s = updater.loadSettings(updCtx());
-    const skin = s.legacySkinChoice;
-    if (!skin || !/^ui-skin-[\w-]+$/.test(skin)) return;
-    const patchFile = path.join(desktopProfileDir(), 'cordis.patch.yml');
-    if (!fs.existsSync(patchFile)) return;
-    const text = fs.readFileSync(patchFile, 'utf8');
-    const re = new RegExp('(- id: ' + skin + '\\b[^\\n]*\\n(?:      [^\\n]*\\n)*?)      disabled: true\\n');
-    const next = text.replace(re, '$1');
-    if (next !== text) {
-      fs.writeFileSync(patchFile, next);
-      log('boot', '已在专属 profile 启用迁移的皮肤: ' + skin);
-    }
-    delete s.legacySkinChoice;
-    updater.saveSettings(updCtx(), s);
-  } catch (err) {
-    log('boot', '应用迁移皮肤选择失败: ' + err.message);
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -3089,8 +2630,6 @@ async function boot() {
   // 渲染进程崩溃/挂起自恢复状态机：必须在 createWindow 之前装配。
   initRendererRecovery();
   startHeartbeatLoop();
-  // 一次性迁移：从共享 web profile 切到桌面专属 profile（与原生 CLI 共存）。
-  migrateFromSharedWebProfile();
   syncCompanionPlugins();
   healProfileModules();
   createWindow();
@@ -3104,19 +2643,10 @@ async function boot() {
       ensureGuard().repairJunctions();
       startJunctionWatchdog();
     })
-    // 插件市场排队任务（服务运行中撞文件锁转待重启的安装/卸载）：趁服务
-    // 尚未启动、无文件锁时先完成，再拉起 Web 服务。
-    .then(() => processPendingMarketOps())
-    .then(async () => {
-      // 排队的 pnpm 操作可能刚重写 profile node_modules（删掉配套插件副本、
-      // hoist 核心包形成双实例）—— 服务启动前重建副本并清理遮蔽，
-      // 保证加载的始终是内置分发版本。
+    .then(() => {
+      // 服务启动前重建内置配套插件副本并清理模块遮蔽。
       syncCompanionPlugins();
       healProfileModules();
-      // V4 兜底：上次 pnpm 后异常退出没回填的第三方构建产物（meow-memory
-      // 的 lib/ 等）在这里补上（processPendingMarketOps 正常路径已含回填，
-      // 这里覆盖崩溃/强杀场景；无缓存时为空操作）。
-      await restoreKeptArtifacts(desktopProfile());
     })
     .then(() => verifyBundledModules())
     .then(() => startAndShowGuarded())
@@ -3183,13 +2713,6 @@ if (!gotLock) {
             }
           }
         } catch {}
-        // 正在跑的插件市场排队任务：直接强杀（它只是 pnpm 的转发器，
-        // 标记文件的 attempts 机制会在下次启动重试）。
-        if (marketOpChild && marketOpChild.pid && marketOpChild.exitCode === null) {
-          try {
-            spawn('taskkill', ['/pid', String(marketOpChild.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
-          } catch {}
-        }
         await killTreeAndWait(serverProc);
         updater.abort();
       } catch (err) {

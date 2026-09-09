@@ -28,8 +28,33 @@ function yamlQuote(s) {
 
 const LEADING = /^([ \t]*)(.*)$/;
 
+// Keep each original terminator attached to its line. Only inserted lines use
+// the first observed newline convention; a BOM belongs to the document.
+function readPatch(text) {
+  const bom = text.startsWith('\uFEFF') ? '\uFEFF' : '';
+  const body = text.slice(bom.length);
+  return {
+    bom,
+    eol: /\r\n|\n|\r/.exec(body)?.[0] ?? '\n',
+    finalEol: /[\r\n]$/.test(body),
+    lines: body.match(/[^\r\n]*(?:\r\n|\n|\r|$)/g)?.filter(Boolean) ?? [],
+  };
+}
+
+function lineText(line) {
+  return line.replace(/(?:\r\n|\n|\r)$/, '');
+}
+
+function insertLines(lines, at, added, eol, finalEol) {
+  if (at > 0 && !/[\r\n]$/.test(lines[at - 1])) lines[at - 1] += eol;
+  const hasNext = at < lines.length;
+  lines.splice(at, 0, ...added.map((line, i) =>
+    line + (i < added.length - 1 || hasNext || finalEol ? eol : '')));
+}
+
 /** 行是否是指定 id 的条目起始行；返回缩进宽度，否则 null。indentLo/Hi 限定层级。 */
 function entryIndentOf(line, id, indentLo, indentHi) {
+  line = lineText(line);
   const escapedId = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const m = new RegExp('^- id:\\s*' + escapedId + '(?![A-Za-z0-9_.-])').exec(line.replace(/^[ \t]+/, ''));
   if (!m) return null;
@@ -49,7 +74,7 @@ function findEntryBlock(lines, id, indentLo, indentHi) {
     if (ind === null) continue;
     let j = i + 1;
     while (j < lines.length) {
-      const [, ws, rest] = LEADING.exec(lines[j]);
+      const [, ws, rest] = LEADING.exec(lineText(lines[j]));
       if (!rest) break; // 空行：块结束
       if (ws.length <= ind) break; // 兄弟条目或外层结构：块结束
       j += 1;
@@ -62,7 +87,7 @@ function findEntryBlock(lines, id, indentLo, indentHi) {
 /** 块内属性行（缩进 > 条目缩进）里第一个匹配 /^[ \t]*key\s*:/ 的行下标。 */
 function findPropLine(lines, block, keyRe) {
   for (let i = block.start + 1; i < block.end; i++) {
-    if (keyRe.test(lines[i])) return i;
+    if (keyRe.test(lineText(lines[i]))) return i;
   }
   return -1;
 }
@@ -82,7 +107,8 @@ function togglePluginInPatch(text, id, enabled, name) {
   const disabledPropRe = /^[ \t]*disabled\s*:\s*(?:true|false)\s*(?:#.*)?$/;
   const namePropRe = /^[ \t]*name\s*:/;
 
-  let lines = text.split('\n');
+  const { bom, eol, finalEol, lines: originalLines } = readPatch(text);
+  let lines = originalLines;
 
   if (!enabled) {
     // 1) 从 insert 块内移除内层条目（缩进 >= 1 视为内层；同一 id 只留一个登记点）
@@ -101,15 +127,14 @@ function togglePluginInPatch(text, id, enabled, name) {
       if (findPropLine(lines, top, disabledPropRe) === -1) {
         const nameIdx = findPropLine(lines, top, namePropRe);
         const insertAt = nameIdx >= 0 ? nameIdx + 1 : top.start + 1;
-        lines.splice(insertAt, 0, '  disabled: true');
+        insertLines(lines, insertAt, ['  disabled: true'], eol, finalEol);
       }
     } else {
       // 追加前先清掉历史遗留的标记注释（避免反复开关时注释堆积）
       lines = lines.filter((l) => !new RegExp('# [^\\n]*关闭 ' + id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![A-Za-z0-9_.-])').test(l));
-      while (lines.length && lines[lines.length - 1].trim() === '') lines.pop();
-      lines.push('', '# 插件管理（设置页「插件」栏）：关闭 ' + id, '- id: ' + id, '  name: ' + yamlQuote(pkgName), '  disabled: true');
+      insertLines(lines, lines.length, ['', '# 插件管理（设置页「插件」栏）：关闭 ' + id, '- id: ' + id, '  name: ' + yamlQuote(pkgName), '  disabled: true'], eol, finalEol);
     }
-    return lines.join('\n');
+    return bom + lines.join('');
   }
 
   // 启用：insert 内层条目与顶层条目都移除 disabled 属性行；顶层无 config
@@ -124,7 +149,7 @@ function togglePluginInPatch(text, id, enabled, name) {
     }
   }
   lines = lines.filter((l) => !new RegExp('# [^\\n]*关闭 ' + id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![A-Za-z0-9_.-])').test(l));
-  return lines.join('\n');
+  return bom + lines.join('');
 }
 
 /**
@@ -136,7 +161,8 @@ function removePluginFromPatch(text, id) {
   if (typeof text !== 'string') throw new TypeError('text must be a string');
   if (typeof id !== 'string' || !id) throw new TypeError('id must be a non-empty string');
   if (!ID_RE.test(id)) throw new TypeError('id 含非法字符（仅允许字母/数字/下划线/点/连字符）: ' + id);
-  let lines = text.split('\n');
+  const { bom, lines: originalLines } = readPatch(text);
+  let lines = originalLines;
   // 先删内层（insert 块内），再删顶层；同一 id 的所有登记点都移除
   for (const range of [[1, Infinity], [0, 2]]) {
     for (;;) {
@@ -152,7 +178,7 @@ function removePluginFromPatch(text, id) {
     return k < lines.length && /^[ \t]+- /.test(lines[k]);
   });
   lines = lines.filter((l) => !new RegExp('# [^\\n]*关闭 ' + id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![A-Za-z0-9_.-])').test(l));
-  return lines.join('\n');
+  return bom + lines.join('');
 }
 
 /**

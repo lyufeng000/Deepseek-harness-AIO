@@ -1,0 +1,29 @@
+{
+  "owner": "@dsh-external/dsh-webui host compatibility (DSHEAC AIO)",
+  "upstream": {
+    "name": "dsh-usage-skill",
+    "version": "0.3.0",
+    "repository": "https://github.com/statem-li/dsh-usage-skill",
+    "archive": "dsh-usage-skill-0.3.0.tgz",
+    "archiveSha256": "07c83593bad68cd46ad0106ead3f4d082b16250b0e9c0cecd010414387475159",
+    "license": "MIT",
+    "files": {
+      "LICENSE": "b9457f2f249de40b9248a7b0721bf21428aa98fb94e78e67f9f89db3d8e71f9a",
+      "lib/index.js": "c68b8661e9aaf7d4bea318cd3afc6cacc6849641d57d752300ecea686f1a9e60",
+      "lib/skills-host.js": "b6fe1b7c9a1a0afad950a7de61ab67f44745623189117306558358ec641e26de",
+      "lib/usage.js": "1db3a1c6c76d8b8f3ee1d696e212a6cc85a80a9eb65a3b19b4b3b6cf163e53b0",
+      "lib/accounts.js": "1ba9aae82092145a58dbd5d28c2d2b935e801ffd2da3581118c709a8262bce4f",
+      "lib/balance.js": "bdad92090ad38e414e1fe703af3687feaf120efbecd8ccccaea3553e2a70dc18",
+      "lib/subscriptions.js": "aefdc993e6b55a05be3203395fd973bf5a5db8af86803bb1d457e61caf37d856",
+      "lib/deepseek-billing.js": "616f540b2b1f809c00ae068981b7887951ad2dd0a2694d067c3679ef0f26bc70"
+    }
+  },
+  "migration": [
+    "Only MIT server modules reused; no standalone package, client, installer, Cordis entry or registry metadata.",
+    "Relative imports renamed to .mjs. WebUI directly owns applyUsageHost.",
+    "Current alpha.2 Session ownEvents, persistence snapshot/list/read-only handles and v2 stream/retry accounting; inherited fork prefixes excluded.",
+    "fflate already in the public kernel replaces the retired yauzl dependency and hand-written ZIP parser.",
+    "Skills enforce bounded non-linked paths, serialized mutations, staged installs and rollback on ledger failure.",
+    "Account adapters retained with original credential/SSRF policy; tests use only temporary fixtures and synthetic credentials."
+  ]
+}

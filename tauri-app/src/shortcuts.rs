@@ -219,7 +219,7 @@ pub fn maintain_shortcuts(paths: &Paths, log: &Logger) {
             if write_lnk(
                 &p,
                 &exe,
-                "DSHEAC AIO v1",
+                concat!("DSHEAC AIO v", env!("CARGO_PKG_VERSION")),
                 Some(&ico),
             ) {
                 changed = true;
@@ -233,7 +233,7 @@ pub fn maintain_shortcuts(paths: &Paths, log: &Logger) {
         && write_lnk(
             &start_menu,
             &exe,
-            "DSHEAC AIO v1",
+            concat!("DSHEAC AIO v", env!("CARGO_PKG_VERSION")),
             Some(&ico),
         )
     {
@@ -248,7 +248,7 @@ pub fn maintain_shortcuts(paths: &Paths, log: &Logger) {
             if write_lnk(
                 &desktop,
                 &exe,
-                "DSHEAC AIO v1",
+                concat!("DSHEAC AIO v", env!("CARGO_PKG_VERSION")),
                 Some(&ico),
             ) {
                 changed = true;

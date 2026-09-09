@@ -1,4 +1,4 @@
-# Changelog — Deepseek Harness EAC（揽尽万象 · Embracing All Creation）
+﻿# Changelog — Deepseek Harness EAC（揽尽万象 · Embracing All Creation）
 
 DeepSeek Harness（dsh）的 Windows 桌面客户端：内置独立 Node 运行时与 dsh CLI，
 一键启动 Web UI。
@@ -26,6 +26,46 @@ DeepSeek Harness（dsh）的 Windows 桌面客户端：内置独立 Node 运行�
   主动查看历史消息时不再因内容增长或输入区高度变化突然跳回底部。
 - 新增补丁契约与幂等测试；目标内核已原生修复或 bundle 结构变化时安全跳过，
   避免对未来内核重复打补丁。
+
+## [AIO v1.2.0] — 2026-09-09
+
+### 升级：内核对齐官方桌面端 0.1.3-alpha.2
+- 参考官方桌面端架构（deepseek-ai/deepseek-harness @ c389f96b），根内核依赖与
+  profile UI 依赖整体对齐 `0.1.3-alpha.2`；sidecar 编译前置到测试之前，
+  构建顺序在干净检出上同样成立。
+- 编译并加载核准的 `fs-ext` 原生依赖；编译器源路径重映射，仅保留相对 PDB 引用。
+- 插件接口随内核迁移逐一修复：退役的 gallery、plain-text、surface-event、
+  `session.events`、`conversationEvents`、`connection.api`、`input.draft` 等
+  host 导出由溯源绑定的 AIO 兼容层承接；提示词优化迁移至 `useInput` 契约并
+  恢复在 Composer 中可见；思考/工具胶囊改读 `useChat` 投影；插件启停补丁
+  修复 BOM/CRLF 解析导致的操作失败。
+
+### UI 回归修复
+- 供应商设置改用 scoped Remote adapter（替代退役的 `connection.api`），设置页
+  导航与内容区独立滚动；移除设置栏遗留项与底部余额/计时提示（定价设置与
+  原生余额 API 保留）。
+
+### 源码瘦身与图标
+- 按确认停用清单删除插件（dsh-market、dsh-offpeak、dsh-plugin-marketplace、
+  dsh-skin-switch、dsh-webui-market）与九个未使用皮肤；WebUI 自有 usage host
+  取代退役的 dsh-usage-skill 动态导入。
+- 应用图标统一更换为 WhaleGirl：`build:icon` 以附件 ICO 为唯一源，一次生成
+  窗口/启动页/任务栏/托盘/快捷方式与 Tauri 打包图标，避免下次构建漂移。
+
+### 构建与发布链路加固
+- 发布脚本读取 package.json 显式 UTF8（中文描述在 PS 5.1 默认 ANSI 下会解析失败）。
+- staging 入口清扫 `tauri-app/resources` 下未知顶层残留目录（历史备份会混入
+  NSIS 清单使 makensis 中止）；新增回归测试。
+- 公共 seed 生成拒绝 cordis.patch.yml 注册不存在插件（npm 依赖或内置 companion
+  二选一），仓库占位 seed 同步契约测试，防止已删除插件回流。
+- 安装器 E2E 卸载注册表检查改为有界轮询（NSIS 自拷贝的注册表删除晚于目录
+  删除，单次立即检查存在竞态误报）。
+
+### 测试
+- Node 全量 712 项：711 通过、0 失败、1 条件跳过；Rust 16 项通过；sidecar
+  类型检查与依赖闭包校验通过；构建产物本机路径审计通过。
+- 安装 E2E：静默安装（含中文+空格路径）、payload 完整性、隔离首启、隐私
+  扫描、静默卸载与残留检查全绿。
 
 ## [AIO v1.1.0] — 2026-09-03
 

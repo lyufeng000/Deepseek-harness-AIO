@@ -187,7 +187,7 @@ function startDonePillClearance() {
 const helpers = '\n' + MARKER + '\n' + [
   placeDonePill, donePillLayoutGroups, donePillObstacles, updateDonePillClearance,
   watchDonePillLayout, startDonePillClearance
-].map((fn) => fn.toString()).join('\n') + '\n';
+].map((fn) => fn.toString().replace(/\r\n/g, '\n')).join('\n') + '\n';
 const edits = [
   [REGION, REGION + helpers],
   [

@@ -24,8 +24,9 @@ import { syncBundledPresets, ensureDefaultAgentPreset } from './lib/preset-sync'
 import { togglePluginInPatch, removePluginFromPatch, hasEntryId } from './lib/plugin-manager-patch';
 import { collectPluginRows } from './lib/plugin-manager-state';
 import { removeMarketDuplicate } from './lib/builtin-collision';
+import { assertProfileStartup, UPGRADE_TARGET } from './lib/profile-upgrade';
 
-// v4Lite 核心内置插件（壳运行必需）：插件市场/保护中心/启停管理。
+// AIO 核心内置插件（壳运行必需）：保护中心与启停管理。
 // 其他内置插件可被「插件 → 管理」移除，核心组拒绝移除。
 const CORE_PLUGIN_IDS = new Set(['plugin-manager', 'plugin-shield']);
 
@@ -33,7 +34,7 @@ const CORE_PLUGIN_IDS = new Set(['plugin-manager', 'plugin-shield']);
 export const DESKTOP_PROFILE_BUNDLES = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'];
 export const DESKTOP_PROFILE = 'web-desktop';
 
-// 随插件/皮肤包一起拷贝到 profile 的许可与出处文件（存在才拷贝）。
+// 随插件包一起拷贝到 profile 的许可与出处文件（存在才拷贝）。
 const EXTRA_PACKAGE_FILES = ['LICENSE', 'LICENSE.md', 'NOTICE', 'NOTICE.md', 'README.md', 'README.zh.md', 'README.zh-CN.md', 'THIRD-PARTY-NOTICES.md', 'EAC-VENDOR.json'];
 const COPY_STAMP = '.eac-copy-stamp.json';
 
@@ -41,13 +42,8 @@ const COPY_STAMP = '.eac-copy-stamp.json';
 const PLUGIN_UPDATE_SOURCES: Record<string, { npm?: string; github?: string }> = {
   'better-sidebar': { npm: 'dsh-better-sidebar' },
   'composer-dynamic-island': { github: 'says693/dsh-composer-dynamic-island' },
-  'dsh-market-plugin': { npm: '@sanqi-normal/dsh-webui-market-plugin' },
   'dsh-undo': { github: 'lire1131/dsh-undo-savepoint' },
 };
-
-// 插件市场排队任务标记。
-const MARKER_NAME = '.dsh-market-pending.json';
-const MARKER_MAX_ATTEMPTS = 3;
 
 export interface CompanionEntry {
   id: string;
@@ -97,17 +93,11 @@ export function createDesktopCore(ctx: DesktopCoreCtx) {
   }
 
   function desktopProfile(): string {
-    try {
-      return loadSettings().shareWebProfile === true ? 'web' : DESKTOP_PROFILE;
-    } catch {
-      return DESKTOP_PROFILE;
-    }
+    return DESKTOP_PROFILE;
   }
 
   const desktopProfileDir = (): string => path.join(dshHome, 'profiles', desktopProfile());
   const profileDirFor = (profile: string): string => path.join(dshHome, 'profiles', profile);
-  const artifactCacheDirFor = (profile: string): string => path.join(dshHome, 'plugin-artifact-cache', profile);
-  const SKINS_DIR = path.join(appRoot, 'assets', 'skins');
 
   function readJsonFile(file: string): Json {
     try {
@@ -121,15 +111,11 @@ export function createDesktopCore(ctx: DesktopCoreCtx) {
 
   const COMPANION_PLUGINS: CompanionEntry[] = [
     { id: 'balance', name: '@deepseek-ai/dsh-balance' },
-    { id: 'skin-switch', name: '@deepseek-ai/dsh-skin-switch' },
-    { id: 'dsh-market-plugin', name: '@sanqi-normal/dsh-webui-market-plugin', dir: 'dsh-webui-market' },
-    { id: 'plugin-marketplace', name: '@deepseek-ai/dsh-plugin-marketplace', dir: 'dsh-plugin-marketplace' },
     { id: 'better-sidebar', name: 'dsh-better-sidebar', dir: 'dsh-better-sidebar' },
     { id: 'composer-dynamic-island', name: 'dsh-composer-dynamic-island', dir: 'dsh-composer-dynamic-island' },
     { id: 'auto-compact', name: 'dsh-auto-compact', dir: 'dsh-auto-compact' },
     { id: 'plugin-shield', name: 'dsh-plugin-shield', dir: 'dsh-plugin-shield' },
     { id: 'plugin-manager', name: '@deepseek-ai/dsh-plugin-manager' },
-    { id: 'offpeak', name: 'dsh-offpeak', dir: 'dsh-offpeak' },
     { id: 'dsh-undo', name: 'dsh-undo-savepoint', dir: 'dsh-undo-savepoint' },
   ];
 
@@ -155,7 +141,6 @@ export function createDesktopCore(ctx: DesktopCoreCtx) {
   function ensureDesktopProfileInit(): void {
     try {
       const dir = desktopProfileDir();
-      if (desktopProfile() === 'web') return; // 共享模式走官方模板
       fs.mkdirSync(dir, { recursive: true });
       const manifest = path.join(dir, 'package.json');
       if (!fs.existsSync(manifest)) {
@@ -263,7 +248,6 @@ export function createDesktopCore(ctx: DesktopCoreCtx) {
     // 内置插件自带的嵌套 node_modules（vendored 运行时依赖）：pnpm 重写
     // profile node_modules 顶层时不会波及，插件保持自包含。
     copyDir('node_modules');
-    // dsh-webui-market 的离线目录快照（官网不可达时的兜底数据）。
     copyDir('data');
     // 带运行时静态资源的插件（动画帧、PyInstaller helper 等）。
     copyDir('assets');
@@ -323,129 +307,6 @@ export function createDesktopCore(ctx: DesktopCoreCtx) {
       out.push({ id: p.id, name: p.name, assetsDir, update });
     }
     return out;
-  }
-
-  // ------------------------------------------------------ 一次性 profile 迁移 --
-
-  function extractPatchRowIds(patch: unknown): string[] {
-    const ids: string[] = [];
-    const re = /^\s*-\s*id:\s*([\w.-]+)\s*$/gm;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(String(patch || ''))) !== null) ids.push(m[1] as string);
-    return ids;
-  }
-
-  function removePatchRowsById(patch: string, ids: Set<string>): { patch: string; removed: string[] } {
-    const removed: string[] = [];
-    if (typeof patch !== 'string' || patch === '' || !ids || ids.size === 0) return { patch, removed };
-    const lines = patch.split(/\r?\n/);
-    const out: string[] = [];
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i] as string;
-      if (/^-\s*insert:/.test(line)) {
-        const mid = /^\s*-\s*id:\s*([\w.-]+)\s*$/.exec((lines[i + 1] as string) || '');
-        if (mid && ids.has(mid[1] as string)) {
-          removed.push(mid[1] as string);
-          let j = i + 1;
-          while (j < lines.length && !/^-\s*insert:/.test(lines[j] as string) && /^#/.test(lines[j] as string) === false && /^\s+\S/.test(lines[j] as string)) j++;
-          i = j - 1;
-          continue;
-        }
-      }
-      out.push(line);
-    }
-    let text = out.join('\n').replace(/\n{3,}/g, '\n\n');
-    if (!text.endsWith('\n')) text += '\n';
-    return { patch: text, removed };
-  }
-
-  // 一次性迁移：桌面端从共享 web profile 切到专属 web-desktop profile（幂等）。
-  function migrateFromSharedWebProfile(): void {
-    try {
-      const s = loadSettings();
-      if (s.desktopProfileMigrated) return;
-      s.desktopProfileMigrated = new Date().toISOString();
-      saveSettings(s); // 先落标记：即使下面失败也不反复折腾
-      if (s.shareWebProfile === true) return; // 用户显式选择共享模式
-
-      const oldDir = path.join(dshHome, 'profiles', 'web');
-      const marker = path.join(oldDir, '.dsh-builtin-plugins.json');
-      if (!fs.existsSync(marker)) return; // 旧版本从没在共享 profile 跑过桌面端
-      const builtinNames: string[] = readJsonFile(marker)?.names || [];
-
-      // 1) 提取用户启用的皮肤行 id。
-      let enabledSkin: string | null = null;
-      const patchFile = path.join(oldDir, 'cordis.patch.yml');
-      let oldPatch = '';
-      try {
-        oldPatch = fs.readFileSync(patchFile, 'utf8');
-      } catch {
-        oldPatch = '';
-      }
-      {
-        const lines = oldPatch.split(/\r?\n/);
-        for (let i = 0; i < lines.length; i++) {
-          const m = /^- id: (ui-skin-[\w-]+)\s*$/.exec(lines[i] as string);
-          if (!m) continue;
-          let disabled = false;
-          for (let j = i + 1; j < lines.length; j++) {
-            if (/^- /.test(lines[j] as string)) break;
-            if (/^\s+disabled:\s*true/.test(lines[j] as string)) disabled = true;
-          }
-          if (!disabled) enabledSkin = m[1] as string;
-        }
-      }
-
-      // 2) 清理旧 profile 的桌面端痕迹。
-      const rowIdSet = new Set<string>();
-      for (const p of COMPANION_PLUGINS) rowIdSet.add(p.id);
-      for (const id of extractPatchRowIds(oldPatch)) {
-        if (/^ui-skin-[\w-]+$/.test(id)) rowIdSet.add(id);
-      }
-      const cleaned = removePatchRowsById(oldPatch, rowIdSet);
-      if (cleaned.removed.length) fs.writeFileSync(patchFile, cleaned.patch);
-      for (const name of builtinNames) {
-        try {
-          fs.rmSync(path.join(oldDir, 'node_modules', ...String(name).split('/')), { recursive: true, force: true, maxRetries: 2 });
-        } catch { /* 尽力清理 */ }
-      }
-      try {
-        fs.rmSync(marker, { force: true });
-      } catch { /* 尽力清理 */ }
-      log('boot', '已迁移到桌面专属 profile（' + DESKTOP_PROFILE + '）：旧 web profile 清理了 ' + cleaned.removed.length + ' 条桌面配套行 / ' + builtinNames.length + ' 个配套包');
-
-      // 3) 在专属 profile 里复活用户选择的皮肤（applyLegacySkinChoice 落位）。
-      if (enabledSkin) {
-        const s2 = loadSettings();
-        s2.legacySkinChoice = enabledSkin;
-        saveSettings(s2);
-        log('boot', '将迁移用户皮肤选择: ' + enabledSkin);
-      }
-    } catch (err) {
-      log('boot', '共享 profile 迁移失败（不影响启动）: ' + (err instanceof Error ? err.message : String(err)));
-    }
-  }
-
-  // syncCompanionPlugins 之后调用一次：把迁移带来的皮肤选择落到新 profile。
-  function applyLegacySkinChoice(): void {
-    try {
-      const s = loadSettings();
-      const skin = s.legacySkinChoice;
-      if (!skin || !/^ui-skin-[\w-]+$/.test(skin)) return;
-      const patchFile = path.join(desktopProfileDir(), 'cordis.patch.yml');
-      if (!fs.existsSync(patchFile)) return;
-      const text = fs.readFileSync(patchFile, 'utf8');
-      const re = new RegExp('(- id: ' + skin + '\\b[^\\n]*\\n(?:      [^\\n]*\\n)*?)      disabled: true\\n');
-      const next = text.replace(re, '$1');
-      if (next !== text) {
-        fs.writeFileSync(patchFile, next);
-        log('boot', '已在专属 profile 启用迁移的皮肤: ' + skin);
-      }
-      delete s.legacySkinChoice;
-      saveSettings(s);
-    } catch (err) {
-      log('boot', '应用迁移皮肤选择失败: ' + (err instanceof Error ? err.message : String(err)));
-    }
   }
 
   // ------------------------------------------------------ 配套插件同步 --
@@ -539,19 +400,7 @@ export function createDesktopCore(ctx: DesktopCoreCtx) {
         log('boot', '内置接管通知发送失败: ' + (err instanceof Error ? err.message : String(err)));
       }
     }
-    // 内置皮肤：行 id 取皮肤包 skin.json 的 wiring.id（ui-skin-*），默认禁用。
-    for (const entry of fs.readdirSync(SKINS_DIR, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      const src = path.join(SKINS_DIR, entry.name);
-      const pkg = readJsonFile(path.join(src, 'package.json'));
-      if (!pkg || typeof pkg.name !== 'string' || !pkg.name.includes('/')) continue;
-      const skin = readJsonFile(path.join(src, 'skin.json'));
-      const rowId = skin && skin.wiring && typeof skin.wiring.id === 'string' ? skin.wiring.id : '';
-      if (!/^ui-skin-[\w-]+$/.test(rowId)) continue;
-      copyPluginPackage(profileDirP, src, pkg.name);
-      pending.push({ id: rowId, name: pkg.name, disabled: true });
-    }
-    // 内置插件清单标记：插件市场据此拒绝重复安装同名内置包。
+    // 内置插件清单标记供同步与碰撞防护使用。
     try {
       const builtinNames = pending.map((p) => p.name);
       const marker = path.join(profileDirP, '.dsh-builtin-plugins.json');
@@ -603,29 +452,14 @@ export function createDesktopCore(ctx: DesktopCoreCtx) {
     }
     if (changed) {
       fs.writeFileSync(patchFile, patch);
-      log('boot', '已同步配套插件/皮肤到 web profile: ' + pending.map((p) => p.id).join(', '));
+      log('boot', '已同步配套插件到 web profile: ' + pending.map((p) => p.id).join(', '));
     }
-    // 迁移带来的皮肤选择在此落位。
-    applyLegacySkinChoice();
   }
 
   // ------------------------------------------------- 第三方构建产物保留 --
 
-  const ARTIFACT_KEEP_MODULE = path.join(appRoot, 'assets', 'plugins', 'dsh-webui-market', 'lib', 'artifact-keep.mjs');
-  const ALLOW_BUILDS_MODULE = path.join(appRoot, 'assets', 'plugins', 'dsh-webui-market', 'lib', 'allow-builds.mjs');
-  let artifactKeepMod: any = null;
+  const ALLOW_BUILDS_MODULE = path.join(appRoot, 'assets', 'runtime', 'plugin-install', 'allow-builds.mjs');
   let allowBuildsMod: any = null;
-
-  async function artifactKeep(): Promise<any> {
-    if (artifactKeepMod) return artifactKeepMod;
-    try {
-      artifactKeepMod = await import(pathToFileURL(ARTIFACT_KEEP_MODULE).href);
-    } catch (err) {
-      log('artifact-keep', '模块加载失败: ' + (err instanceof Error ? err.message : String(err)));
-      artifactKeepMod = {};
-    }
-    return artifactKeepMod;
-  }
 
   async function allowBuilds(): Promise<any> {
     if (allowBuildsMod) return allowBuildsMod;
@@ -639,229 +473,7 @@ export function createDesktopCore(ctx: DesktopCoreCtx) {
   }
 
   function managedPackageNames(): string[] {
-    const names = COMPANION_PLUGINS.map((p) => p.name);
-    try {
-      for (const entry of fs.readdirSync(SKINS_DIR, { withFileTypes: true })) {
-        if (!entry.isDirectory()) continue;
-        const pkg = readJsonFile(path.join(SKINS_DIR, entry.name, 'package.json'));
-        if (pkg && typeof pkg.name === 'string') names.push(pkg.name);
-      }
-    } catch { /* 无皮肤目录 */ }
-    return names;
-  }
-
-  async function restoreKeptArtifacts(profile: string): Promise<void> {
-    const ak = await artifactKeep();
-    if (typeof ak.restoreArtifacts !== 'function') return;
-    try {
-      ak.restoreArtifacts(profileDirFor(profile), artifactCacheDirFor(profile), {
-        log: (m: string) => log('artifact-keep', m),
-      });
-    } catch (err) {
-      log('artifact-keep', '回填失败: ' + (err instanceof Error ? err.message : String(err)));
-    }
-  }
-
-  // ------------------------------------------------- 插件市场排队任务 --
-
-  function removeMarkerFile(file: string): boolean {
-    try {
-      fs.rmSync(file, { force: true, maxRetries: 5, retryDelay: 200 });
-    } catch { /* 落到改名兜底 */ }
-    if (!fs.existsSync(file)) return true;
-    try {
-      fs.renameSync(file, file + '.stale-' + Date.now());
-    } catch { /* 锁着也无可奈何，交给 attempts 上限 */ }
-    return !fs.existsSync(file);
-  }
-
-  interface MarketMarker {
-    marker: string;
-    job: { target: string; profile: string; kind: 'install' | 'uninstall'; label?: string; attempts?: number };
-  }
-
-  function pendingMarketMarkers(): MarketMarker[] {
-    const out: MarketMarker[] = [];
-    try {
-      const profilesRoot = path.join(dshHome, 'profiles');
-      if (!fs.existsSync(profilesRoot)) return out;
-      for (const entry of fs.readdirSync(profilesRoot, { withFileTypes: true })) {
-        if (!entry.isDirectory()) continue;
-        const marker = path.join(profilesRoot, entry.name, MARKER_NAME);
-        if (!fs.existsSync(marker)) continue;
-        try {
-          // 去掉可能的 UTF-8 BOM（外部编辑器写入的标记）再解析。
-          const job = JSON.parse(fs.readFileSync(marker, 'utf8').replace(/^\uFEFF/, ''));
-          if (
-            job &&
-            typeof job.target === 'string' &&
-            job.target &&
-            typeof job.profile === 'string' &&
-            /^[A-Za-z0-9_-]+$/.test(job.profile) &&
-            (job.kind === 'install' || job.kind === 'uninstall')
-          ) {
-            // 旧版 host 可能把目录默认 profile 'web' 写进标记——归一化后执行。
-            job.profile = job.profile === 'web' ? desktopProfile() : job.profile;
-            out.push({ marker, job });
-          } else {
-            log('market-pending', '标记字段不完整，已删除: ' + marker);
-            removeMarkerFile(marker);
-          }
-        } catch (err) {
-          log('market-pending', `标记损坏，已删除: ${marker} (${err instanceof Error ? err.message : String(err)})`);
-          removeMarkerFile(marker);
-        }
-      }
-    } catch (err) {
-      log('market-pending', '扫描排队任务失败: ' + (err instanceof Error ? err.message : String(err)));
-    }
-    return out;
-  }
-
-  function finishMarketMarker(marker: string, job: MarketMarker['job'], attempts: number, ok: boolean, tail: unknown): void {
-    if (ok) {
-      log('market-pending', '排队任务完成: ' + (job.label || job.target));
-      if (!removeMarkerFile(marker)) {
-        log('market-pending', '警告: 排队标记删除失败（文件被占用？），已尝试改名兜底');
-      }
-      return;
-    }
-    if (attempts >= MARKER_MAX_ATTEMPTS) {
-      const last = String(tail || '').split(/\r?\n/).filter(Boolean).pop() || '';
-      log('market-pending', `排队任务连续 ${attempts} 次失败，放弃并清除: ${job.label || job.target}${last ? ' — ' + last.slice(0, 200) : ''}`);
-      removeMarkerFile(marker);
-      return;
-    }
-    try {
-      fs.writeFileSync(marker, JSON.stringify({ ...job, attempts }, null, 2));
-    } catch { /* 尽力重写 */ }
-    log('market-pending', '排队任务失败（下次启动重试）: ' + (job.label || job.target));
-  }
-
-  // 必须在"没有任何 dsh web 进程持锁"时调用（调用方保证时序）。
-  async function processPendingMarketOps(): Promise<{ executed: number }> {
-    const items = pendingMarketMarkers();
-    if (items.length === 0) return { executed: 0 };
-    const nodeBin = nodeExe();
-    const bin = dshBin();
-    if (!fs.existsSync(nodeBin) || !fs.existsSync(bin)) {
-      log('market-pending', '找不到 node/dsh CLI，跳过排队任务');
-      return { executed: 0 };
-    }
-    log('market-pending', `发现 ${items.length} 个排队任务，开始执行（无文件锁窗口期）`);
-    const profiles = [...new Set(items.map((it) => it.job.profile))];
-    const ak = await artifactKeep();
-    if (typeof ak.snapshotArtifacts === 'function') {
-      for (const profile of profiles) {
-        try {
-          ak.snapshotArtifacts(profileDirFor(profile), artifactCacheDirFor(profile), {
-            managedNames: managedPackageNames(),
-            log: (m: string) => log('artifact-keep', m),
-          });
-        } catch (err) {
-          log('artifact-keep', `snapshot ${profile} 失败: ` + (err instanceof Error ? err.message : String(err)));
-        }
-      }
-    }
-    await new Promise<void>((resolve) => {
-      let idx = 0;
-      // allowBuilds 自动放行后的重试只允许一次（同一 marker）。
-      const retriedMarkers = new Set<string>();
-      const next = async (): Promise<void> => {
-        if (idx >= items.length) {
-          // pnpm 可能重新 hoist 出 @deepseek-ai 遮蔽拷贝，装完立刻清理。
-          healProfileModules();
-          return resolve();
-        }
-        const { marker, job } = items[idx] as MarketMarker;
-        const retried = retriedMarkers.has(marker);
-        const attempts = Number(job.attempts || 0) + 1;
-        const action = job.kind === 'uninstall' ? 'remove' : 'add';
-        ensureGuard().snapshot('market:' + job.target);
-        log('market-pending', `执行(${attempts}/${MARKER_MAX_ATTEMPTS}): dsh plugin --profile ${job.profile} ${action} ${job.target}`);
-        const child = spawn(nodeBin, [bin, 'plugin', '--profile', job.profile, action, job.target], {
-          cwd: userDataDir,
-          // CI=true：pnpm v10 无 TTY 时对被忽略的构建脚本静默放行而不是硬失败。
-          env: { ...marketEnv(), CI: 'true' },
-          windowsHide: true,
-          stdio: ['ignore', 'pipe', 'pipe'],
-        });
-        let tail = '';
-        const onData = (c: unknown): void => {
-          const text = String(c);
-          tail = (tail + text).slice(-8000);
-          for (const line of text.split(/\r?\n/)) {
-            const s = line.trim();
-            if (s && !/^Progress:/.test(s)) log('market-pending', s.slice(0, 300));
-          }
-        };
-        child.stdout!.on('data', onData);
-        child.stderr!.on('data', onData);
-        const timer = setTimeout(() => {
-          log('market-pending', '排队任务超时（5 分钟），强制终止');
-          try {
-            spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
-          } catch { /* 尽力终止 */ }
-        }, 5 * 60 * 1000);
-        child.on('error', (err) => {
-          clearTimeout(timer);
-          finishMarketMarker(marker, job, attempts, false, String(err instanceof Error ? err.message : err));
-          idx += 1;
-          next();
-        });
-        child.on('close', async (code) => {
-          clearTimeout(timer);
-          // pnpm 封锁构建脚本硬失败：解析包名 → 写 allowBuilds → 重试一次。
-          if (code !== 0 && !retried) {
-            try {
-              const ab = await allowBuilds();
-              const keys = (ab.parseBlockedBuildKeys || (() => []))(tail) as string[];
-              if (keys.length > 0) {
-                const r = await ab.ensureAllowBuilds(path.join(profileDirFor(job.profile), 'pnpm-workspace.yaml'), keys);
-                if (r && r.wrote) {
-                  log('market-pending', `[allowBuilds] 已自动放行 ${r.added.join(', ')}，自动重试`);
-                  retriedMarkers.add(marker);
-                  next();
-                  return;
-                }
-              }
-            } catch (err) {
-              log('market-pending', '[allowBuilds] 自动放行失败: ' + String((err instanceof Error && err.message) || err));
-            }
-          }
-          finishMarketMarker(marker, job, attempts, code === 0, tail);
-          idx += 1;
-          next();
-        });
-      };
-      next();
-    });
-    // pnpm 重写完成：回填被清掉的第三方构建产物（lib/ 等）。
-    if (typeof ak.restoreArtifacts === 'function') {
-      for (const profile of profiles) {
-        try {
-          ak.restoreArtifacts(profileDirFor(profile), artifactCacheDirFor(profile), {
-            log: (m: string) => log('artifact-keep', m),
-          });
-        } catch (err) {
-          log('artifact-keep', `restore ${profile} 失败: ` + (err instanceof Error ? err.message : String(err)));
-        }
-      }
-    }
-    return { executed: items.length };
-  }
-
-  // dsh 子进程环境（与 Rust 壳 childEnv 一致的清理语义）。
-  function marketEnv(): NodeJS.ProcessEnv {
-    const env = { ...process.env };
-    for (const k of ['DSH_WEB_URL', 'DSH_SESSION_ID', 'DSH_SESSION_JSONL', 'DSH_SHELL', 'ELECTRON_RUN_AS_NODE', 'NODE_OPTIONS']) {
-      delete env[k];
-    }
-    env.DSH_HOME = dshHome;
-    env.DSH_DESKTOP = '1';
-    env.DSH_DESKTOP_PROFILE = desktopProfile();
-    env.NO_COLOR = '1';
-    return env;
+    return COMPANION_PLUGINS.map((p) => p.name);
   }
 
   // ------------------------------------------------------ 插件启停管理 --
@@ -1334,25 +946,32 @@ export function createDesktopCore(ctx: DesktopCoreCtx) {
   // ------------------------------------------------- 启动链编排（boot 调用）--
 
   function migrateAndSync(): { ok: true } {
-    migrateFromSharedWebProfile();
+    upgradePreflight();
     syncCompanionPlugins();
     healProfileModules();
     return { ok: true };
   }
 
   function syncAll(): { ok: true } {
+    upgradePreflight();
     syncCompanionPlugins();
     healProfileModules();
     return { ok: true };
   }
 
+  function upgradePreflight(): { ok: true } {
+    const activeKernel = readJsonFile(path.join(path.dirname(path.dirname(dshBin())), 'package.json'));
+    if (activeKernel?.version !== UPGRADE_TARGET.kernel) {
+      throw new Error('PROFILE_UPGRADE_REQUIRED: active kernel needs offline migration');
+    }
+    assertProfileStartup(appRoot, desktopProfileDir());
+    return { ok: true };
+  }
+
   return {
     // profile
-    migrateAndSync, syncAll, ensureDesktopProfileInit, syncCompanionPlugins, healProfileModules,
-    migrateFromSharedWebProfile, applyLegacySkinChoice, removePatchRowsById, extractPatchRowIds,
-    // market
-    processPendingMarketOps, pendingMarketMarkers, removeMarkerFile, finishMarketMarker,
-    restoreKeptArtifacts, managedPackageNames,
+    upgradePreflight, migrateAndSync, syncAll, ensureDesktopProfileInit, syncCompanionPlugins, healProfileModules,
+    managedPackageNames,
     // guard
     ensureGuard, guardAction, guardAllowBuildsPreRetry, junctionTick,
     // plugins
@@ -1369,5 +988,3 @@ export function createDesktopCore(ctx: DesktopCoreCtx) {
     COMPANION_PLUGINS, CORE_PLUGIN_IDS, PLUGIN_UPDATE_SOURCES, EXTRA_PACKAGE_FILES, COPY_STAMP,
   };
 }
-
-export { MARKER_NAME };

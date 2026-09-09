@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "files": {
+    "LICENSE": "b9457f2f249de40b9248a7b0721bf21428aa98fb94e78e67f9f89db3d8e71f9a",
+    "PROVENANCE.json": "68cc79ec0aee0a6a3df9fb8dba808d3d7767828c496a21e945da981f034f0dd5",
+    "accounts.mjs": "c1d839541cd9cc6777bae90a28636063ac4d786bc878d243de9e3494447ac75d",
+    "archive.mjs": "c1aab6670be8c3acc2b414a81854c81dc5259f5894e62a30a631cd1aba24c328",
+    "balance.mjs": "bdad92090ad38e414e1fe703af3687feaf120efbecd8ccccaea3553e2a70dc18",
+    "deepseek-billing.mjs": "d876b8b3ca442d382467998b927ad024542fa63013cadaf29249f6bd57a4784d",
+    "filesystem.mjs": "6eb38d6a874672f13b95ce93138a9f608ac8201728c5352fc9ca2cb12e342a68",
+    "index.mjs": "94febb89315bb5ef1d10da0f608937200b7ddbc5e21a0262c473a95a9a3d2245",
+    "skills-host.mjs": "eaa335f92d53ee2f4125c29e246c4162c6cd7073e461d08dede961912fd28fb9",
+    "subscriptions.mjs": "aefdc993e6b55a05be3203395fd973bf5a5db8af86803bb1d457e61caf37d856",
+    "usage.mjs": "5b1f261e2f2bb9e41dd32a75cd14b94d2ae773c4331c482007c4557323a94fce"
+  }
+}

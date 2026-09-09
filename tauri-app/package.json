@@ -1,14 +1,15 @@
 {
   "name": "dsh-desktop-aio-tauri",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
   "scripts": {
     "build:inject": "node build-inject.mjs",
+    "prepare:bundle": "npm run build:inject && npm run sidecar:build && npm --prefix .. run build:native && node ../scripts/sanitize-public-seed.mjs .. && node scripts/stage.ts",
     "tauri": "tauri",
     "dev": "npm run build:inject && npm run sidecar:build && tauri dev",
-    "build": "npm run build:inject && npm run sidecar:build && node scripts/stage.ts && tauri build",
-    "bundle": "tauri build",
+    "build": "node ../scripts/build-tauri-release.mjs",
+    "bundle": "node ../scripts/build-tauri-release.mjs",
     "sidecar:build": "tsc -p ../sidecar/tsconfig.json",
     "sidecar:check": "tsc -p ../sidecar/tsconfig.json --noEmit"
   },
