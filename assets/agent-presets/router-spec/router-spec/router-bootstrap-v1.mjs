@@ -73,7 +73,7 @@ export function apply(ctx, config) {
     agents.set(session.id, agent)
 
     // issue #3 fix: the first assembly happens before the first user/message
-    // event lands in session.events, so sessionMode() saw an empty transcript
+    // event lands in the session log, so sessionMode() saw an empty transcript
     // and injected the WEAK band on the path-committing first request. Use the
     // live text captured by the session/event listener (or inbox pending) so
     // the first request carries the REAL classification.
@@ -101,7 +101,7 @@ export function apply(ctx, config) {
       core = new Set(legacyCore(mode))
     }
 
-    if (session.events.some((event) => event.type === 'tool/call')) {
+    if (session.snapshotEvents().some((event) => event.type === 'tool/call')) {
       return { ...assembled, sections, contexts: [] } // promoted: full catalog
     }
 
@@ -184,11 +184,11 @@ export function apply(ctx, config) {
     description: 'Show this session\'s reasoning-mode routing: mode, band, persona, first-turn core tools, test-suppression, and whether an override is active.',
     parameters: {},
     output: { schema: { type: 'string' }, render: (_a, v) => [{ type: 'text', text: v }] },
-    execute() {
-      const session = currentSession()
+    execute(_args, exec) {
+      const session = exec?.agent?.session
       if (session === undefined) return 'no agent session'
       const mode = overrides.get(session.id) ?? sessionMode(session)
-      const modelId = currentAgent()?.options?.model
+      const modelId = exec.agent.options?.model
       return [
         `router-mode=${routerMode} (standard=RL接口还原 / spec=深度思考优先)`,
         `mode=${fmtMode(mode)} (band=${bandFor(mode)})`,
@@ -205,10 +205,10 @@ export function apply(ctx, config) {
     description: 'Set this session\'s reasoning mode: spec (plan-first) / weak (internal routing, model decides per task) / mixed (transition, trap) / react (doer). Accepts band names, 0-100, or 0.0-1.0; use auto to return to task classification. The next request applies it.',
     parameters: modeSpec,
     output: { schema: { type: 'string' }, render: (_a, v) => [{ type: 'text', text: v }] },
-    execute(args) {
+    execute(args, exec) {
       const parsed = parseMode(args.mode)
       if (parsed === null) return `invalid mode "${args.mode}": use spec/weak/mixed/react, 0-100, 0.0-1.0, or auto`
-      const session = currentSession()
+      const session = exec?.agent?.session
       if (session === undefined) return 'no agent session'
       if (parsed === 'auto') overrides.delete(session.id)
       else overrides.set(session.id, parsed === 'weak' ? 'weak' : clamp01(parsed))
@@ -230,11 +230,10 @@ export function apply(ctx, config) {
       maxTokens: { type: 'number', description: 'output cap (default 1024)' },
     },
     output: { schema: { type: 'string' }, render: (_a, v) => [{ type: 'text', text: v }] },
-    async execute(args) {
+    async execute(args, exec) {
       const parsed = parseMode(args.mode)
       if (parsed === null || parsed === 'auto') return `invalid mode "${args.mode}"`
-      const session = currentSession()
-      const agent = session === undefined ? undefined : [...agents.values()].find((a) => a.session === session)
+      const agent = exec?.agent
       if (agent === undefined || agent.options === undefined) return 'no agent route available'
       const { provider, model } = agent.options
       if (!provider || !model) return 'agent route missing provider/model'
@@ -263,15 +262,4 @@ export function apply(ctx, config) {
     },
   })
 
-  function currentSession() {
-    const agent = ctx.get('agent')
-    if (agent !== undefined && agent.session !== undefined) return agent.session
-    const last = [...agents.values()].at(-1)
-    return last?.session
-  }
-
-  function currentAgent() {
-    const session = currentSession()
-    return session === undefined ? undefined : [...agents.values()].find((a) => a.session === session)
-  }
 }

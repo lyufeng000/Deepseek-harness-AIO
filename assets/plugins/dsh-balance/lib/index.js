@@ -1,5 +1,5 @@
-// Host-side entry: this companion package has no server half (the balance
-// payload is produced by the DSH Desktop shell and pushed to the page).
+// Host-side entry: this settings-only companion has no server half.
+// Price settings and native balance APIs remain owned by the desktop shell.
 // The loader (dsh 0.1.0-rc.6) rejects an empty default export, so the host
 // half is a valid no-op Cordis plugin.
 const name = "dsh-balance";

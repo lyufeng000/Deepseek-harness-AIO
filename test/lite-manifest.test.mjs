@@ -10,23 +10,19 @@ import { join } from 'node:path';
 const root = join(import.meta.dirname, '..');
 const read = (rel) => readFileSync(join(root, rel), 'utf8');
 
-const KEEP_SKINS = [
-  'blue-fantasy', 'dragon-heir', 'miku', 'minecraft', 'qq98',
-  'ths', 'trading', 'whale-song', 'xp',
-].sort();
+const KEEP_SKINS = [];
 
 const KEEP_PLUGIN_DIRS = [
-  'dsh-auto-compact', 'dsh-balance', 'dsh-better-sidebar', 'dsh-composer-dynamic-island', 'dsh-market',
-  'dsh-offpeak', 'dsh-plugin-manager', 'dsh-plugin-marketplace',
-  'dsh-plugin-shield', 'dsh-skin-switch', 'dsh-undo-savepoint', 'dsh-webui-market',
+  'dsh-aio-ui-compat',
+  'dsh-auto-compact', 'dsh-balance', 'dsh-better-sidebar', 'dsh-composer-dynamic-island',
+  'dsh-plugin-manager',
+  'dsh-plugin-shield', 'dsh-undo-savepoint',
 ].sort();
 
-// main.js COMPANION_PLUGINS 里保留的注册 id（含新补登记的 plugin-marketplace
-// 与 4.5.0 新增的 dsh-market）。
+// Active Tauri sidecar registry; frozen Electron files are not the source of truth.
 const KEEP_PLUGIN_IDS = [
-  'auto-compact', 'balance', 'better-sidebar', 'composer-dynamic-island', 'dsh-market', 'dsh-market-plugin',
-  'dsh-undo', 'offpeak', 'plugin-manager', 'plugin-marketplace', 'plugin-shield',
-  'skin-switch',
+  'auto-compact', 'balance', 'better-sidebar', 'composer-dynamic-island',
+  'dsh-undo', 'plugin-manager', 'plugin-shield',
 ].sort();
 
 // 壳层与脚本中禁止再出现的引用（移除功能的残留）。
@@ -63,9 +59,10 @@ const FORBIDDEN_TESTS = [
   'settings-nav-core.test.mjs', 'tool-vision-stream-guard.test.mjs',
   'update-mirror-chain.test.mjs', 'widget-theme.test.mjs',
   'onboarding-selection.test.mjs',
+  'dsh-market-builtin.test.mjs',
 ];
 
-test('皮肤：assets/skins 恰为 9 款（无 maid-atelier）', () => {
+test('皮肤：保留切换基础设施，不再预装可选皮肤', () => {
   const dirs = readdirSync(join(root, 'assets', 'skins'), { withFileTypes: true })
     .filter((e) => e.isDirectory()).map((e) => e.name).sort();
   assert.deepEqual(dirs, KEEP_SKINS);
@@ -76,14 +73,7 @@ test('皮肤：assets/skins 恰为 9 款（无 maid-atelier）', () => {
   }
 });
 
-test('皮肤：dsh-skin-switch 不再引用 maid-atelier', () => {
-  const pkg = read('assets/plugins/dsh-skin-switch/package.json');
-  const client = read('assets/plugins/dsh-skin-switch/lib/client.js');
-  assert.ok(!/maid/i.test(pkg));
-  assert.ok(!/maid-atelier|srcMaid|licMaid|creditMaid|noticeMaid|repoMaid/.test(client));
-});
-
-test('插件：assets/plugins 恰为保留的 12 个目录', () => {
+test('插件：assets/plugins 包含保留插件及内核 UI 兼容包', () => {
   const dirs = readdirSync(join(root, 'assets', 'plugins'), { withFileTypes: true })
     .filter((e) => e.isDirectory()).map((e) => e.name).sort();
   assert.deepEqual(dirs, KEEP_PLUGIN_DIRS);
@@ -92,18 +82,18 @@ test('插件：assets/plugins 恰为保留的 12 个目录', () => {
   }
 });
 
-test('插件：main.js COMPANION_PLUGINS 注册表恰为保留的 12 个 id', () => {
-  const main = read('main.js');
-  const m = main.match(/const COMPANION_PLUGINS = \[([\s\S]*?)\];/);
-  assert.ok(m, 'main.js 中找不到 COMPANION_PLUGINS 定义');
+test('插件：active sidecar COMPANION_PLUGINS 恰为保留的 7 个 id', () => {
+  const main = read('sidecar/src/desktop-core.ts');
+  const m = main.match(/const COMPANION_PLUGINS: CompanionEntry\[\] = \[([\s\S]*?)\];/);
+  assert.ok(m, 'sidecar 中找不到 COMPANION_PLUGINS 定义');
   const ids = [...m[1].matchAll(/id: '([^']+)'/g)].map((x) => x[1]).sort();
   assert.deepEqual(ids, KEEP_PLUGIN_IDS);
 });
 
 test('插件：核心组（CORE_PLUGIN_IDS）为 v4Lite 清单，选择向导已整体移除', () => {
-  const main = read('main.js');
+  const main = read('sidecar/src/desktop-core.ts');
   const core = main.match(/const CORE_PLUGIN_IDS = new Set\(\[([\s\S]*?)\]\)/);
-  assert.ok(core, 'main.js 中找不到 CORE_PLUGIN_IDS 定义');
+  assert.ok(core, 'sidecar 中找不到 CORE_PLUGIN_IDS 定义');
   const ids = (s) => [...s[1].matchAll(/'([^']+)'/g)].map((x) => x[1]).sort();
   assert.deepEqual(ids(core), ['plugin-manager', 'plugin-shield']);
   for (const rel of ['scripts/onboarding.js', 'assets/onboarding.html', 'assets/onboarding-preload.js', 'assets/plugins/dsh-plugin-wizard']) {
@@ -129,7 +119,7 @@ test('壳层：被移除的模块/脚本/调试文件不存在', () => {
 test('壳层：AIO 技能由脱敏 profile seed 清单和外部离线资产声明', () => {
   assert.ok(!existsSync(join(root, 'assets', 'skills')), '旧 assets/skills 不应残留');
   const seedPackage = JSON.parse(read('distribution/profile-seed/profiles/web-desktop/package.json'));
-  assert.ok(seedPackage.dependencies?.['dsh-usage-skill'], 'profile seed 清单应声明 dsh-usage-skill');
+  assert.ok(!seedPackage.dependencies?.['dsh-usage-skill'], 'profile seed must omit retired dsh-usage-skill');
   const stage = read('tauri-app/scripts/stage.ts');
   assert.match(stage, /DSH_PROFILE_SEED_DIR/, 'staging 应支持注入审核后的离线 seed');
 });
@@ -158,7 +148,12 @@ test('打包：package.json 使用 AIO v1 发布标识、无客户端自更新�
   const pkg = JSON.parse(read('package.json'));
   assert.equal(pkg.name, 'dsh-desktop-aio');
   assert.equal(pkg.productName, 'DSHEAC AIO');
-  assert.equal(pkg.version, '1.1.0');
+  assert.equal(pkg.version, '1.2.0');
+  assert.equal(JSON.parse(read('tauri-app/package.json')).version, pkg.version);
+  assert.equal(JSON.parse(read('tauri-app/tauri.conf.json')).version, pkg.version);
+  assert.equal(JSON.parse(read('package-lock.json')).version, pkg.version);
+  assert.equal(JSON.parse(read('tauri-app/package-lock.json')).version, pkg.version);
+  assert.ok(read('tauri-app/Cargo.toml').includes(`version = "${pkg.version}"`));
   assert.deepEqual(pkg.overrides, {
     '@xmldom/xmldom': '0.8.15',
     'fast-uri': '3.1.6',

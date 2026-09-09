@@ -76,8 +76,8 @@ test('Web adapter 无外传 API，并锁定焦点与卸载生命周期修复', (
   assert.doesNotMatch(client, /\? "岛内" : "原位"/);
 });
 
-test('Electron、兼容核心与 Tauri sidecar 同步注册插件和 GitHub 更新源', () => {
-  for (const rel of ['main.js', 'desktop-core.js', 'sidecar/src/desktop-core.ts']) {
+test('Electron 与 Tauri sidecar 同步注册插件和 GitHub 更新源', () => {
+  for (const rel of ['main.js', 'sidecar/src/desktop-core.ts']) {
     const source = read(rel);
     assert.match(source, /\{ id: 'composer-dynamic-island', name: 'dsh-composer-dynamic-island', dir: 'dsh-composer-dynamic-island' \}/, `${rel} 缺 companion 注册`);
     assert.match(source, /'composer-dynamic-island': \{ github: 'says693\/dsh-composer-dynamic-island' \}/, `${rel} 缺更新源`);

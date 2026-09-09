@@ -70,6 +70,15 @@ function skipReleaseFile(name) {
 
 function copyTree(src, dst) {
   const stat = fs.statSync(src);
+  const nativeBuild = src.replace(/\\/g, '/').match(/\/node_modules\/fs-ext\/build(\/.*)?$/);
+  if (nativeBuild && !['', '/Release', '/Release/fs_ext.node'].includes(nativeBuild[1] || '')) {
+    if (stat.isDirectory()) releaseSkip.dirs += 1;
+    else {
+      releaseSkip.files += 1;
+      releaseSkip.bytes += stat.size;
+    }
+    return;
+  }
   if (!stat.isDirectory()) {
     if (skipReleaseFile(path.basename(src))) {
       releaseSkip.files += 1;
@@ -99,12 +108,7 @@ function copyTree(src, dst) {
     } else if (entry.isSymbolicLink()) {
       copyTree(fs.realpathSync(source), destination);
     } else if (entry.isFile()) {
-      if (skipReleaseFile(entry.name)) {
-        releaseSkip.files += 1;
-        try { releaseSkip.bytes += fs.statSync(source).size; } catch { /* race */ }
-        continue;
-      }
-      fs.copyFileSync(source, destination);
+      copyTree(source, destination);
     }
   }
 }
@@ -292,6 +296,12 @@ function main() {
   rmrf(path.join(RESOURCES, 'node'));
   rmrf(path.join(RESOURCES, 'npm'));
   rmrf(path.join(RESOURCES, 'profile-seed'));
+  // resources/ 完全由本脚本重建（仅 .gitkeep 入库）。历史残留的顶层目录会混入
+  // NSIS 打包清单，深层路径或中途被删的文件会让 makensis 直接中止。
+  for (const entry of fs.readdirSync(RESOURCES, { withFileTypes: true })) {
+    if (entry.name.startsWith('.')) continue;
+    rmrf(path.join(RESOURCES, entry.name));
+  }
 
   // 1) 根 package.json + sidecar TS 编译产物 + koffi 探针脚本 + assets
   copyFile('package.json');

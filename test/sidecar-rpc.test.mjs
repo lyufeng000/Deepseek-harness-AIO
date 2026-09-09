@@ -131,8 +131,7 @@ test('sidecar: profile 初始化 + 配套插件同步落盘', async () => {
     assert.match(patch, /id: balance/);
     assert.match(patch, /id: plugin-manager/);
     assert.match(patch, /id: composer-dynamic-island[\s\S]*?name: 'dsh-composer-dynamic-island'/);
-    // 皮肤行默认禁用。
-    assert.match(patch, /id: ui-skin-[\w-]+[\s\S]*?disabled: true/);
+    assert.doesNotMatch(patch, /id: skin-switch|id: dsh-market-plugin|id: ui-skin-|id: offpeak|id: plugin-marketplace/);
     // 内置清单标记已写。
     const marker = JSON.parse(fs.readFileSync(path.join(profileDir, '.dsh-builtin-plugins.json'), 'utf8'));
     assert.ok(marker.names.includes('@deepseek-ai/dsh-balance'));
@@ -245,25 +244,6 @@ test('sidecar: 余额价格读写校验', async () => {
     assert.equal(reset.result.ok, true);
     const get2 = await s.rpc('balance.pricesGet', { model: 'deepseek-v4-pro' });
     assert.equal(get2.result.current, null);
-  } finally {
-    s.kill();
-  }
-});
-
-test('sidecar: 排队任务标记解析与 profile 归一化', async () => {
-  const home = tmpRoot('home');
-  const userData = tmpRoot('userdata');
-  const logs = path.join(userData, 'logs');
-  fs.mkdirSync(logs, { recursive: true });
-  const s = await startSidecar(home, userData, logs);
-  try {
-    // 损坏标记：扫描时应被删除而不是崩溃。
-    const profiles = path.join(home, 'profiles', 'web');
-    fs.mkdirSync(profiles, { recursive: true });
-    fs.writeFileSync(path.join(profiles, '.dsh-market-pending.json'), '{broken');
-    const r = await s.rpc('market.processPending', {}, 60000);
-    assert.equal(r.ok, true);
-    assert.ok(!fs.existsSync(path.join(profiles, '.dsh-market-pending.json')), '损坏标记应被清理');
   } finally {
     s.kill();
   }

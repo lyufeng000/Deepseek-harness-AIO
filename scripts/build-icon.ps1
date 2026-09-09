@@ -1,6 +1,8 @@
 # Generates build/icon.png, assets/icon.png and assets/tray-icon.png.
 #
-# Source of truth: assets/icon.jpg (user-provided design). Processing:
+# Source of truth: assets/DeepSeekHarness-WhaleGirl.ico when present. The
+# legacy assets/icon.jpg and generated fallback remain for older checkouts.
+# Processing:
 #   1. color-key the near-white background band ([228,248], max-min <= 10) to
 #      transparent — removes the off-white square WITHOUT touching the white
 #      wordmark (255,255,255 sits outside the keyed band);
@@ -164,6 +166,51 @@ public static class IconMask
 '@ -ReferencedAssemblies System.Drawing
 
 $jpg = Join-Path $assetsDir 'icon.jpg'
+$icoSource = Join-Path $assetsDir 'DeepSeekHarness-WhaleGirl.ico'
+
+if (Test-Path $icoSource) {
+    # The supplied ICO is the single source of truth for the window, loading,
+    # taskbar, tray, and shortcut icons. Keep the generated PNGs in sync so
+    # WebView pages and the native shell show the same artwork.
+    # System.Drawing.Icon.ToBitmap() corrupts some PNG-compressed ICO frames;
+    # extract the largest embedded PNG frame and decode that payload directly.
+    $icoBytes = [IO.File]::ReadAllBytes($icoSource)
+    $frameCount = [BitConverter]::ToUInt16($icoBytes, 4)
+    $bestOffset = 0
+    $bestSize = 0
+    for ($i = 0; $i -lt $frameCount; $i++) {
+        $entry = 6 + 16 * $i
+        $frameSize = [BitConverter]::ToUInt32($icoBytes, $entry + 8)
+        $frameOffset = [BitConverter]::ToUInt32($icoBytes, $entry + 12)
+        if ($frameSize -gt $bestSize) {
+            $bestSize = $frameSize
+            $bestOffset = $frameOffset
+        }
+    }
+    $frame = New-Object byte[] $bestSize
+    [Array]::Copy($icoBytes, $bestOffset, $frame, 0, $bestSize)
+    $frameStream = New-Object IO.MemoryStream(, $frame)
+    $decoded = [System.Drawing.Bitmap]::FromStream($frameStream)
+    $src = New-Object System.Drawing.Bitmap($decoded)
+    $main = [IconMask]::Process($src, 0, $false)
+    $main.Save((Join-Path $buildDir 'icon.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+    $main.Save((Join-Path $assetsDir 'icon.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+    [IconMask]::SaveIco($main, (Join-Path $buildDir 'icon.ico'), @(16, 24, 32, 48, 64, 128, 256))
+    [IconMask]::SaveIco($main, (Join-Path $assetsDir 'icon.ico'), @(16, 24, 32, 48, 64, 128, 256))
+    # Tauri bundle icons and the loading-page icon must be regenerated from the
+    # same source, otherwise the exe resource and splash screen drift from the
+    # supplied artwork on the next build.
+    $tauriIconsDir = Join-Path $root 'tauri-app\icons'
+    New-Item -ItemType Directory -Force -Path $tauriIconsDir | Out-Null
+    [IconMask]::SaveIco($main, (Join-Path $tauriIconsDir 'icon.ico'), @(16, 24, 32, 48, 64, 128, 256))
+    $main.Save((Join-Path $tauriIconsDir 'icon.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+    $main.Save((Join-Path $root 'tauri-app\frontend\icon.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+    $tray = [IconMask]::Resize($src, 32, 0)
+    $tray.Save((Join-Path $assetsDir 'tray-icon.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+    $src.Dispose(); $decoded.Dispose(); $frameStream.Dispose(); $main.Dispose(); $tray.Dispose()
+    Write-Output 'icon generated from DeepSeekHarness-WhaleGirl.ico: window/loading/taskbar/tray/shortcut assets synchronized'
+    exit 0
+}
 
 if (Test-Path $jpg) {
     # --- Mask the user-provided design --------------------------------------

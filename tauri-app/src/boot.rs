@@ -124,11 +124,16 @@ pub fn navigate_main_to_web(app: &AppHandle, state: &AppState) {
     let url = state.web_url.lock().unwrap().clone();
     let Some(url) = url else { return };
     if let Some(win) = app.get_webview_window("main") {
-        let js = format!(
-            "window.location.replace({});",
-            serde_json::to_string(&url).unwrap_or_default()
-        );
-        let _ = win.eval(&js);
+        // A browser-initiated navigation lets the new kernel's Strict auth
+        // cookie survive its initial redirect from the Tauri loading origin.
+        match url.parse() {
+            Ok(target) => {
+                if win.navigate(target).is_err() {
+                    state.log.log("boot", "Web UI navigation failed");
+                }
+            }
+            Err(_) => state.log.log("boot", "Invalid Web UI URL"),
+        }
         let _ = win.show();
         let _ = win.set_focus();
     }
@@ -162,6 +167,7 @@ pub fn reload_main_window(app: &AppHandle) {
 
 /// 合并 koffi 降级 overlay 与调用方 overlays，拉起服务并把窗口导航过去。
 pub fn start_and_show(state: &Arc<AppState>, overlays: &[String]) -> Result<String, String> {
+    state.sidecar()?.call("profile.upgradePreflight", json!({}))?;
     let mut merged: Vec<String> = Vec::new();
     if let Some(po) = state.picker_overlay.lock().unwrap().clone() {
         if std::path::Path::new(&po).exists() {
@@ -182,7 +188,7 @@ pub fn start_and_show(state: &Arc<AppState>, overlays: &[String]) -> Result<Stri
     *state.service.lock().unwrap() = Some(outcome.handle.clone());
     state
         .log
-        .log("boot", &format!("Web UI 就绪: {}", outcome.url));
+        .log("boot", &format!("Web UI 就绪: {}", outcome.url.split('?').next().unwrap_or("")));
     // startAndShow 的「show」半边：导航主窗到 Web UI 并显示。
     // （移植缺失导致窗口停留在隐藏的 about:blank —— 真机验证发现。）
     if let Some(app) = state.app_handle() {
@@ -278,6 +284,7 @@ fn on_service_died(state: &Arc<AppState>, code: Option<i32>, signal: &str) {
 
 pub fn guarded_start(state: &Arc<AppState>) -> Result<String, String> {
     let sc = state.sidecar()?;
+    sc.call("profile.upgradePreflight", json!({}))?;
     let snap = sc.call("guard.snapshot", json!({"reason": "boot"})).ok();
     match start_and_show(state, &[]) {
         Ok(url) => {
@@ -451,21 +458,13 @@ pub fn restart_service_core(state: &Arc<AppState>) -> Value {
             crate::service::kill_handle(h);
         }
         drop(old);
-        // 等旧进程真正退出（DLL 文件锁释放），给市场排队任务一个无锁窗口。
+        // 等旧进程真正退出（DLL 文件锁释放），再同步内置插件并重启。
         wait_service_gone(state, Duration::from_secs(20));
         let sc = state.sidecar()?;
-        if let Err(e) = sc.call_timeout(
-            "market.processPending",
-            json!({}),
-            Duration::from_secs(15 * 60),
-        ) {
-            state
-                .log
-                .log("market-pending", &format!("排队任务执行失败: {}", e));
-        }
-        // pnpm 重写 node_modules 后：重建配套插件副本 + 清理遮蔽（顺序不能反）。
+        // 重建配套插件副本 + 清理遮蔽（顺序不能反）。
         if let Err(e) = sc.call("profile.syncAll", json!({})) {
             state.log.log("boot", &format!("重启间隙同步失败: {}", e));
+            return Err(e);
         }
         guarded_start(state)
     })();
@@ -1122,6 +1121,18 @@ fn boot_chain(state: &Arc<AppState>) {
         state
             .log
             .log("boot", &format!("profile 迁移/同步失败: {}", e));
+        // A version-gate failure must not fall through to repairs or launch.
+        show_dialog_simple(state, DialogSpec {
+            title: "Profile startup paused".into(),
+            message: "Profile migration or synchronization did not complete.".into(),
+            detail: "Startup is blocked. Older profiles require an offline dependency upgrade; automatic activation is not available in this build.".into(),
+            buttons: vec!["OK".into()],
+            default_index: 0,
+            checkbox: None,
+            icon: DialogIcon::Warning,
+            cancellable: true,
+        });
+        return;
     }
 
     // koffi FFI 预检：失败则注入目录选择器降级 overlay（start_and_show 以
@@ -1172,6 +1183,11 @@ fn boot_chain(state: &Arc<AppState>) {
     }
 
     // 启动成功收尾。
+    match paths.commit_distribution_profile_seed() {
+        Ok(true) => state.log.log("boot", "新版 profile 已通过启动验收，旧插件备份已清理"),
+        Ok(false) => {}
+        Err(e) => state.log.log("boot", &format!("profile 升级收尾失败: {e}")),
+    }
     let _ = sc.call("updater.confirmHealthy", json!({}));
     crate::shortcuts::maintain_shortcuts(paths, &state.log);
     start_balance_loop(state.clone());

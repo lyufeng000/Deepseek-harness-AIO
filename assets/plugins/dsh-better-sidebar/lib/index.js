@@ -2,15 +2,19 @@ import { createRequire } from "node:module";
 import { mkdir, open, opendir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
-import z from "schemastery";
+import z from "@deepseek-ai/schemastery";
 import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { SettingsConflictError, settingsNamespace } from "@deepseek-ai/dsh-settings";
+import { SettingsConflictError } from "@deepseek-ai/dsh-settings";
 import { chmodSync, existsSync } from "node:fs";
 import { userInfo } from "node:os";
 import * as nodePty from "node-pty";
 import { defineTool } from "@deepseek-ai/dsh-tools";
+function settingsNamespace(value) {
+	if (!/^[a-z][a-z0-9-]*$/.test(value)) throw new TypeError("Invalid settings namespace");
+	return value;
+}
 //#region src/prefs-shared.ts
 /**
 * Shared "Side card" preference vocabulary (types + constants), consumed by

@@ -1,0 +1,27 @@
+{
+  "name": "dsh-aio-ui-compat",
+  "version": "1.0.0",
+  "description": "Narrow AIO compatibility exports for legacy image galleries and plain message text.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "license": "MIT",
+  "files": ["lib", "cordis.patch.yml", "LICENSE", "PROVENANCE.json", "README.md"],
+  "dsh": {
+    "client": {
+      "inject": [],
+      "platform": "web"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  }
+}

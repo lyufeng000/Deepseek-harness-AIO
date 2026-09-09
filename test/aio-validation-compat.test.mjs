@@ -57,6 +57,18 @@ test('AIO has one default Tauri release entrypoint', () => {
   assert.ok(fs.existsSync(path.join(root, 'scripts', 'verify-aio-installer.ps1')));
 });
 
+test('every Tauri bundle rebuilds and privacy-checks its seed before staging', () => {
+  const conf = JSON.parse(read('tauri-app/tauri.conf.json'));
+  const pkg = JSON.parse(read('tauri-app/package.json'));
+  assert.equal(conf.build.beforeBuildCommand, 'npm run prepare:bundle');
+  const prepare = pkg.scripts['prepare:bundle'];
+  assert.match(prepare, /sidecar:build/);
+  assert.match(prepare, /sanitize-public-seed\.mjs \.\. && node scripts\/stage\.ts$/);
+  assert.ok(prepare.indexOf('sidecar:build') < prepare.indexOf('sanitize-public-seed'));
+  const root = JSON.parse(read('package.json'));
+  assert.equal(root.scripts.pretest, 'npm --prefix tauri-app run sidecar:build');
+});
+
 test('AIO update smoke rejects client self-update exposure', () => {
   const smoke = read('update-smoke.js');
   assert.match(smoke, /client auto-update scripts/);

@@ -1,0 +1,25 @@
+/* The alpha.2 settings shell has a clipped panel but no scroll owner for its
+   extensible nav list. Keep the title fixed and the existing skin colors intact. */
+@media (min-width: 768px) {
+  [role="dialog"].VOzbGW_panel > nav.VOzbGW_nav {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  [role="dialog"].VOzbGW_panel > nav.VOzbGW_nav > .VOzbGW_navTitle {
+    flex-shrink: 0;
+  }
+
+  [role="dialog"].VOzbGW_panel > nav.VOzbGW_nav > .VOzbGW_navList {
+    flex: 1;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    padding-bottom: 16px;
+  }
+
+  [role="dialog"].VOzbGW_panel > nav.VOzbGW_nav > .VOzbGW_navList > button {
+    flex-shrink: 0;
+  }
+}

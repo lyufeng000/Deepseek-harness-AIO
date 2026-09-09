@@ -392,5 +392,9 @@ mod tests {
         );
         assert_eq!(parse_ready_url("no url here"), None);
         assert_eq!(parse_ready_url("dsh web: not-a-url"), None);
+        assert_eq!(
+            parse_ready_url("dsh web: http://127.0.0.1:18080/?token=qualification-test"),
+            Some("http://127.0.0.1:18080/?token=qualification-test".to_string())
+        );
     }
 }

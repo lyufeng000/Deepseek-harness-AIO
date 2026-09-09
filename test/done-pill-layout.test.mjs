@@ -314,6 +314,14 @@ test('real installed bundle: strict transform, syntax, idempotence and isolated 
     assert.ok(result.source.includes(MARKER));
     new vm.Script(result.source);
     assert.deepEqual(transform(result.source, realMetadata), { source: result.source, changed: false });
+    const patchScript = fs.readFileSync(require.resolve('../scripts/patch-done-pill.cjs'), 'utf8');
+    for (const eol of ['\n', '\r\n']) {
+      const module = { exports: {} };
+      vm.runInNewContext(patchScript.replace(/\r?\n/g, eol), { require, module });
+      const checkoutResult = module.exports.transform(result.source, realMetadata);
+      assert.equal(checkoutResult.changed, false, 'patch checkout line endings must not affect verification');
+      assert.equal(checkoutResult.source, result.source);
+    }
     const crlf = original.replace(/\r?\n/g, '\r\n');
     const crlfPatched = transform(crlf, realMetadata).source;
     assert.ok(!/(?<!\r)\n/.test(crlfPatched));

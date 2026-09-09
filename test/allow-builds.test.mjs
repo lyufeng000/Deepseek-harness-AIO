@@ -11,7 +11,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 // 本测试覆盖 pnpm 封锁提示的多形态解析与 pnpm-workspace.yaml 的行级编辑。
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const mod = await import(pathToFileURL(join(root, 'assets', 'plugins', 'dsh-webui-market', 'lib', 'allow-builds.mjs')).href);
+const mod = await import(pathToFileURL(join(root, 'assets', 'runtime', 'plugin-install', 'allow-builds.mjs')).href);
 const { parseBlockedBuildKeys, readAllowBuilds, ensureAllowBuilds } = mod;
 
 function tmp() {
@@ -41,8 +41,8 @@ test('parseBlockedBuildKeys：带 ERR_PNPM_IGNORED_BUILDS 前缀与换行续行'
 test('parseBlockedBuildKeys：prepare/install script of "x" 形态', () => {
   const a = 'prepare script of "meow-memory" is blocked';
   assert.deepEqual(parseBlockedBuildKeys(a), ['meow-memory']);
-  const b = 'install script of \'@sanqi-normal/dsh-webui-market\' was not executed';
-  assert.deepEqual(parseBlockedBuildKeys(b), ['@sanqi-normal/dsh-webui-market']);
+  const b = 'install script of \'@example/native-addon\' was not executed';
+  assert.deepEqual(parseBlockedBuildKeys(b), ['@example/native-addon']);
 });
 
 test('parseBlockedBuildKeys：scoped 包名与尾标点清理', () => {

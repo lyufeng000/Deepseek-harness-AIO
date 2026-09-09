@@ -24,7 +24,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
 
-pub const DISPLAY_RELEASE: &str = "v1";
+pub const DISPLAY_RELEASE: &str = concat!("v", env!("CARGO_PKG_VERSION"));
 
 pub fn run() {
     let app = tauri::Builder::default()
@@ -325,7 +325,7 @@ fn create_tray(app: AppHandle, state: &Arc<AppState>) {
     let st = state.clone();
     let tray = TrayIconBuilder::with_id("main-tray")
         .icon(icon)
-        .tooltip("DSHEAC AIO v1")
+        .tooltip(format!("DSHEAC AIO {}", DISPLAY_RELEASE))
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(move |app, event| {

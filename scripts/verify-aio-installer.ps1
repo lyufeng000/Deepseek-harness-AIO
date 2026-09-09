@@ -13,7 +13,9 @@ if ([string]::IsNullOrWhiteSpace($ProjectRoot)) {
     $ProjectRoot = Split-Path -Parent $PSScriptRoot
 }
 
-$installer = Join-Path $ProjectRoot 'dist\DSHEAC-AIO-v1-Setup-x64.exe'
+# package.json 包含中文描述；PS 5.1 默认按 ANSI 读取会把多字节序列读坏，必须显式 UTF8。
+$version = (Get-Content -LiteralPath (Join-Path $ProjectRoot 'package.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version
+$installer = Join-Path $ProjectRoot "dist\DSHEAC-AIO-v${version}-Setup-x64.exe"
 $verificationRoot = Join-Path $ProjectRoot 'verification'
 $runId = '{0}-{1}-{2}' -f (Get-Date -Format 'yyyyMMdd-HHmmss-fff'), $PID, ([guid]::NewGuid().ToString('N').Substring(0, 8))
 # Keep the E2E root short enough for NSIS/node_modules while still testing
@@ -31,8 +33,8 @@ $failure = $null
 $report = [ordered]@{
     edition = 'AIO'
     editionMeaning = 'All-in-One'
-    release = 'v1'
-    technicalSemVer = '1.1.0'
+    release = "v$version"
+    technicalSemVer = $version
     verifiedAt = (Get-Date).ToString('o')
     installer = $installer
     installDirectory = $installRoot
@@ -154,9 +156,9 @@ try {
     }
 
     $stage = 'install'
-    Write-Host '[1/7] Installing DSHEAC AIO v1 silently into a Unicode path...'
+    Write-Host "[1/7] Installing DSHEAC AIO v$version silently into a Unicode path..."
     $installTimer = [Diagnostics.Stopwatch]::StartNew()
-    $installProcess = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$installRoot") -PassThru
+    $installProcess = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$installRoot") -PassThru -WindowStyle Hidden
     $installExit = Wait-ProcessBounded $installProcess $InstallTimeoutSeconds 'Installer'
     $installTimer.Stop()
     $report.install = [ordered]@{ exitCode = $installExit; elapsedMs = $installTimer.ElapsedMilliseconds }
@@ -175,7 +177,7 @@ try {
         (Join-Path $installRoot 'resources\app\assets\plugins\dsh-composer-dynamic-island\dsh-plugin.json'),
         (Join-Path $installRoot 'resources\app\assets\plugins\dsh-composer-dynamic-island\EAC-VENDOR.json'),
         (Join-Path $installRoot 'resources\profile-seed\profiles\web-desktop\node_modules\@dsh-external\dsh-webui\package.json'),
-        (Join-Path $installRoot 'resources\profile-seed\profiles\web-desktop\node_modules\dsh-usage-skill\package.json')
+        (Join-Path $installRoot 'resources\profile-seed\profiles\web-desktop\node_modules\dsh-aio-ui-compat\package.json')
     )
     $missingFiles = @($requiredFiles | Where-Object { -not (Test-Path -LiteralPath $_) })
     if ($missingFiles.Count -gt 0) { throw "Installed payload is incomplete: $($missingFiles -join ', ')" }
@@ -216,9 +218,12 @@ try {
     $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
     try {
         $startTimer = [Diagnostics.Stopwatch]::StartNew()
-        $appProcess = Start-Process -FilePath $appExe -WorkingDirectory $installRoot -PassThru
+        $appProcess = Start-Process -FilePath $appExe -WorkingDirectory $installRoot -PassThru -WindowStyle Hidden
         $settingsJson = Join-Path $isolatedUserData 'settings.json'
+        $desktopLog = Join-Path $isolatedUserData 'logs\desktop.log'
+        $dshWebLog = Join-Path $isolatedUserData 'logs\dsh-web.log'
         $testHealth = $null
+        $healthUrl = $null
         $webPort = 0
         $listenerPid = 0
         $deadline = [DateTime]::UtcNow.AddSeconds($StartupTimeoutSeconds)
@@ -231,8 +236,29 @@ try {
                     $webPort = [int]$settings.webPort
                 } catch {}
             }
+            if ($webPort -le 0 -and (Test-Path -LiteralPath $desktopLog)) {
+                try {
+                    $tail = (Get-Content -LiteralPath $desktopLog -Encoding UTF8 -Tail 80 -ErrorAction Stop) -join "`n"
+                    $readyMatches = [regex]::Matches($tail, 'Web UI 就绪:\s*http://127\.0\.0\.1:(\d+)/')
+                    if ($readyMatches.Count -gt 0) {
+                        $webPort = [int]$readyMatches[$readyMatches.Count - 1].Groups[1].Value
+                    }
+                } catch {}
+            }
+            if (Test-Path -LiteralPath $dshWebLog) {
+                try {
+                    $tail = (Get-Content -LiteralPath $dshWebLog -Encoding UTF8 -Tail 80 -ErrorAction Stop) -join "`n"
+                    $urlMatches = [regex]::Matches($tail, 'dsh web:\s*(http://127\.0\.0\.1:(\d+)/\?token=[^\s]+)')
+                    if ($urlMatches.Count -gt 0) {
+                        $lastUrl = $urlMatches[$urlMatches.Count - 1]
+                        $healthUrl = $lastUrl.Groups[1].Value
+                        $webPort = [int]$lastUrl.Groups[2].Value
+                    }
+                } catch {}
+            }
             if ($webPort -gt 0) {
-                $testHealth = Test-HttpReady "http://127.0.0.1:$webPort/" 1
+                $probeUrl = if ($healthUrl) { $healthUrl } else { "http://127.0.0.1:$webPort/" }
+                $testHealth = Test-HttpReady $probeUrl 1
                 if ($testHealth.ok) {
                     $listenerPid = Get-ListenerPid $webPort
                     if (Test-ProcessInTree $listenerPid $appProcess.Id) { break }
@@ -265,11 +291,15 @@ try {
         $dependencyNames = @($packageJson.dependencies.psobject.Properties.Name)
         $requiredPackages = @(
             '@dsh-external/dsh-webui', '@local/dsh-webui-statem-bridge',
-            '@ha-na-bi/dsh-client-ui-custom', 'dsh-usage-skill', 'dsh-find-plugin',
+            '@ha-na-bi/dsh-client-ui-custom', 'dsh-aio-ui-compat', 'dsh-find-plugin',
             'dsh-plugin-wallpaper-engine', 'dsh-status-rotator'
         )
         $missingPackages = @($requiredPackages | Where-Object { $_ -notin $dependencyNames })
         if ($missingPackages.Count -gt 0) { throw "Expected profile packages are missing: $($missingPackages -join ', ')" }
+        $retiredPackages = @('@vlln/dsh-navbar', 'dsh-smooth-stream', 'dsh-usage-skill')
+        if (@($retiredPackages | Where-Object { $_ -in $dependencyNames }).Count -gt 0) {
+            throw 'Retired optional plugins remain in the seeded dependency manifest.'
+        }
 
         $islandProfileRoot = Join-Path $isolatedHome 'profiles\web-desktop\node_modules\dsh-composer-dynamic-island'
         $requiredIslandFiles = @(
@@ -364,7 +394,7 @@ try {
     $uninstaller = Get-ChildItem -LiteralPath $installRoot -Filter 'uninstall*.exe' -File | Select-Object -First 1
     if ($null -eq $uninstaller) { throw 'Uninstaller was not found in the installed payload.' }
     $uninstallTimer = [Diagnostics.Stopwatch]::StartNew()
-    $uninstallProcess = Start-Process -FilePath $uninstaller.FullName -ArgumentList @('/S') -PassThru
+    $uninstallProcess = Start-Process -FilePath $uninstaller.FullName -ArgumentList @('/S') -PassThru -WindowStyle Hidden
     $uninstallExit = Wait-ProcessBounded $uninstallProcess $UninstallTimeoutSeconds 'Uninstaller'
     if ($uninstallExit -ne 0) { throw "Uninstaller exited with code $uninstallExit" }
     # NSIS launches a temporary self-copy; the original launcher can exit before
@@ -384,7 +414,16 @@ try {
     if (-not (Test-Path -LiteralPath $isolatedHome) -or -not (Test-Path -LiteralPath $isolatedUserData)) {
         throw 'Silent uninstall did not preserve external user data as required.'
     }
-    $registryResidue = @(Get-AioUninstallEntries)
+    # NSIS deletes the registry key after RMDir $INSTDIR in the uninstall
+    # section; the temp self-copy may still be between those steps when the
+    # directory check above passes. Poll briefly instead of checking once.
+    $registryResidue = @()
+    $registryDeadline = [DateTime]::UtcNow.AddSeconds(30)
+    do {
+        $registryResidue = @(Get-AioUninstallEntries)
+        if ($registryResidue.Count -eq 0) { break }
+        Start-Sleep -Milliseconds 500
+    } while ([DateTime]::UtcNow -lt $registryDeadline)
     if ($registryResidue.Count -gt 0) { throw 'AIO uninstall registry entry remained after uninstall.' }
     $report.uninstall = [ordered]@{
         exitCode = $uninstallExit
