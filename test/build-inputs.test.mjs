@@ -11,6 +11,9 @@ test('build-inputs workflow downloads, verifies and builds', () => {
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /runs-on: \[self-hosted, Windows, X64, aio\]/);
   assert.match(workflow, /clean: false/);
+  assert.match(workflow, /working-directory: src/);
+  assert.match(workflow, /path: src/);
+  assert.match(workflow, /src\/dist\/\*\.exe/);
   assert.match(workflow, /Prepare clean build-input directories/);
   assert.match(workflow, /Verify Rust toolchain/);
   assert.doesNotMatch(workflow, /dtolnay\/rust-toolchain/);
