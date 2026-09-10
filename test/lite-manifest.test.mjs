@@ -150,7 +150,7 @@ test('打包：package.json 使用 AIO v1 发布标识、无客户端自更新�
   const pkg = JSON.parse(read('package.json'));
   assert.equal(pkg.name, 'dsh-desktop-aio');
   assert.equal(pkg.productName, 'DSHEAC AIO');
-  assert.equal(pkg.version, '1.2.2');
+  assert.equal(pkg.version, '1.2.3');
   assert.equal(JSON.parse(read('tauri-app/package.json')).version, pkg.version);
   assert.equal(JSON.parse(read('tauri-app/tauri.conf.json')).version, pkg.version);
   assert.equal(JSON.parse(read('package-lock.json')).version, pkg.version);
