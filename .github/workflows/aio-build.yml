@@ -25,7 +25,7 @@ jobs:
     runs-on: [self-hosted, Windows, X64, aio]
     defaults:
       run:
-        working-directory: src
+        working-directory: a
     env:
       BUILD_INPUTS_TAG: ${{ inputs.build_inputs_tag || 'build-inputs-v1.2.0' }}
       RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}
@@ -34,13 +34,13 @@ jobs:
         with:
           fetch-depth: 0
           clean: false
-          path: src
+          path: a
 
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: npm
-          cache-dependency-path: src/package-lock.json
+          cache-dependency-path: a/package-lock.json
 
       - name: Verify Rust toolchain
         shell: pwsh
@@ -52,7 +52,7 @@ jobs:
         shell: pwsh
         run: |
           foreach ($relative in @('temp\build-inputs\release', 'temp\build-inputs\extracted', 'vendor')) {
-            $path = Join-Path (Join-Path $env:GITHUB_WORKSPACE 'src') $relative
+            $path = Join-Path (Join-Path $env:GITHUB_WORKSPACE 'a') $relative
             if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force }
           }
 
@@ -61,7 +61,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $repo = Join-Path $env:GITHUB_WORKSPACE 'src'
+          $repo = Join-Path $env:GITHUB_WORKSPACE 'a'
           $download = Join-Path $repo 'temp\build-inputs\release'
           $extract = Join-Path $repo 'temp\build-inputs\extracted'
           New-Item -ItemType Directory -Path $download -Force | Out-Null
@@ -97,10 +97,10 @@ jobs:
         with:
           name: DSHEAC-AIO-build
           path: |
-            src/dist/*.exe
-            src/dist/*.txt
-            src/dist/portable/*.zip
-            src/dist/portable/*.txt
+            a/dist/*.exe
+            a/dist/*.txt
+            a/dist/portable/*.zip
+            a/dist/portable/*.txt
           if-no-files-found: error
 
       - name: Publish application release
@@ -111,7 +111,7 @@ jobs:
           name: DSHEAC AIO ${{ env.RELEASE_TAG }}
           generate_release_notes: true
           files: |
-            src/dist/*.exe
-            src/dist/portable/*.zip
-            src/dist/SHA256SUMS.txt
-            src/dist/portable/SHA256SUMS.txt
+            a/dist/*.exe
+            a/dist/portable/*.zip
+            a/dist/SHA256SUMS.txt
+            a/dist/portable/SHA256SUMS.txt
