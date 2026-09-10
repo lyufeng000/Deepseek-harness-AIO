@@ -31,3 +31,6 @@ build/*
 !assets/plugins/*/data/
 !assets/plugins/dsh-tdai-memory/node_modules/
 !assets/plugins/dsh-tdai-memory/node_modules/**/data/
+
+# 工作区临时文件与本地构建输入
+temp/
