@@ -14,9 +14,16 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const {
-  alive, copyTree, boundedRemove, validateTransaction, isWithin,
+  alive, copyTree, boundedRemove, validateTransaction, isWithin, installerInvocation,
   prepareTransaction, restoreProgram, executeTransaction,
 } = require('../sidecar/dist/lib/update-transaction.js');
+
+test('installerInvocation 逐字传递未加引号的 /D= 且启用 verbatim', () => {
+  const invocation = installerInvocation('D:\\Program Files\\Development Tools\\DSHEAC AIO', 'C:\\stage\\update-setup.exe');
+  assert.deepEqual(invocation.args, ['/S', '/D=D:\\Program Files\\Development Tools\\DSHEAC AIO']);
+  assert.equal(invocation.windowsVerbatimArguments, true);
+  assert.equal(invocation.file, 'C:\\stage\\update-setup.exe');
+});
 
 function tmpDir(t, label = 'tx') {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-' + label + '-'));

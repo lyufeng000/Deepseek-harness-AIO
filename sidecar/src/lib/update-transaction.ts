@@ -156,10 +156,24 @@ function restoreData(tx: Transaction): void {
   }
 }
 
+export function installerInvocation(root: string, executable: string): { file: string; args: string[]; windowsVerbatimArguments: true } {
+  // NSIS 的 /D= 必须是最后一个参数，且不允许带引号（即使路径含空格）。Node 在
+  // Windows 上默认会给含空格的参数加引号，必须逐字传递；同时把安装器复制到
+  // 无空格的事务路径下，保证命令首个 token 可被 NSIS 正确切分。
+  return { file: executable, args: ['/S', `/D=${root}`], windowsVerbatimArguments: true };
+}
 async function runInstaller(tx: Transaction): Promise<void> {
-  // Current AIO NSIS scope is currentUser. /D must be the last argument.
+  // Current AIO NSIS scope is currentUser. /D must be the last, unquoted argument.
+  const staged = path.join(tx.directory, 'update-setup.exe');
+  if (!fs.existsSync(staged)) {
+    assertPlainPath(tx.file);
+    fs.copyFileSync(tx.file, staged);
+  }
+  const invocation = installerInvocation(tx.root, staged);
   await new Promise<void>((resolve, reject) => {
-    const child = spawn(tx.file, ['/S', `/D=${tx.root}`], { windowsHide: true, stdio: 'ignore' });
+    const child = spawn(invocation.file, invocation.args, {
+      windowsHide: true, stdio: 'ignore', windowsVerbatimArguments: invocation.windowsVerbatimArguments,
+    });
     const timeout = setTimeout(() => { child.kill(); reject(new Error('安装超时，请检查恢复日志。')); }, 15 * 60_000);
     child.once('error', error => { clearTimeout(timeout); reject(error); });
     child.once('exit', code => { clearTimeout(timeout); code === 0 ? resolve() : reject(new Error('安装器未成功完成。')); });
