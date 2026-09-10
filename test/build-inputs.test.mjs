@@ -12,6 +12,8 @@ test('build-inputs workflow downloads, verifies and builds', () => {
   assert.match(workflow, /runs-on: \[self-hosted, Windows, X64, aio\]/);
   assert.match(workflow, /clean: false/);
   assert.match(workflow, /Prepare clean build-input directories/);
+  assert.match(workflow, /Verify Rust toolchain/);
+  assert.doesNotMatch(workflow, /dtolnay\/rust-toolchain/);
   assert.match(workflow, /tags:\s*\r?\n\s*- 'v\*'/);
   assert.match(workflow, /gh release download \$env:BUILD_INPUTS_TAG/);
   assert.match(workflow, /verify-build-inputs\.ps1/);

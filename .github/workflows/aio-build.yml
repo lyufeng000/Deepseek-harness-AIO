@@ -37,7 +37,11 @@ jobs:
           node-version: '24'
           cache: npm
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify Rust toolchain
+        shell: pwsh
+        run: |
+          rustc --version
+          cargo --version
 
       - name: Prepare clean build-input directories
         shell: pwsh
