@@ -1,5 +1,9 @@
 # AIO 构建与打包规则
 
+# 首要规则：
+## 和用户对话永远使用中文，无论用户用什么语言询问
+## 思考模式的语言也要求是中文
+
 ## 一键构建入口
 
 本地打包统一使用仓库根目录的：
@@ -57,7 +61,7 @@ build-aio.cmd -Clean
 3. 统一校验 `package.json`、`tauri-app/package.json`、`tauri-app/tauri.conf.json`、`tauri-app/Cargo.toml` 版本一致。
 4. `-Clean` 时对 release 目标执行 `cargo clean`。
 5. `-FullTest` 时先 `prepare-test-fixtures.mjs`，再编译 sidecar、跑全量 JS 测试与 `cargo test --locked`。
-6. 调用 `npm --prefix tauri-app run bundle`；其 `beforeBuildCommand` 触发唯一准备入口 `scripts/prepare-aio.mjs`（icon → inject → sidecar → seed-review → native → staging → 受控种子补丁，逐阶段内容指纹缓存）。staging 后由 `scripts/seed-kernel-patches.mjs` 给打包副本打上 DeepSeek 模型默认识图补丁（只作用于 `resources/profile-seed`，不改上游快照）。
+6. 调用 `npm --prefix tauri-app run bundle`；其 `beforeBuildCommand` 触发唯一准备入口 `scripts/prepare-aio.mjs`（icon → inject → sidecar → seed-review → native → staging → 受控种子补丁，逐阶段内容指纹缓存）。staging 后由 `scripts/seed-kernel-patches.mjs` 给打包副本打受控种子补丁：DeepSeek 模型原生识图默认开（`inputModalities` 含 `image`）、`dsh-webui` 辅助视觉自动降级默认关（图片交给原生模型解析，不再转写文本）。补丁只作用于 `resources/profile-seed`，不改上游快照。
 7. 执行 Tauri/NSIS 打包，生成单文件安装器。
 8. 复制安装器到临时输出并生成便携 ZIP。
 9. 计算顶层/便携包 SHA-256 与 `build-provenance.json`。
