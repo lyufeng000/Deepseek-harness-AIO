@@ -119,6 +119,8 @@ export function createDesktopCore(ctx: DesktopCoreCtx) {
     { id: 'plugin-shield', name: 'dsh-plugin-shield', dir: 'dsh-plugin-shield' },
     { id: 'plugin-manager', name: '@deepseek-ai/dsh-plugin-manager' },
     { id: 'dsh-undo', name: 'dsh-undo-savepoint', dir: 'dsh-undo-savepoint' },
+    // 为内置 DeepSeek provider 补上实时 /models 发现（上游该路由没有发现器）。
+    { id: 'aio-live-models', name: 'dsh-aio-live-models', dir: 'dsh-aio-live-models' },
   ];
 
   // ------------------------------------------------------ 保护中心（guard）--

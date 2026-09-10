@@ -139,3 +139,26 @@ cargo test --locked --manifest-path tauri-app\Cargo.toml
 build-aio.cmd
 build-aio.cmd -Verify
 ```
+
+## 七、后续修复（用户实测反馈）
+
+### 启动无窗口
+
+- 现象：安装后双击无窗口，疑似未启动。
+- 根因：`lib.rs` 在 `create_main_window()` 之前执行 `seed_distribution_profile()`（首次约 3 万文件 / 1-2 分钟），期间无任何窗口。实测进程 17:50:45 启动、17:52:20 才写首条日志。
+- 修复：把 seed 调用移入 `boot.rs::boot_chain` 后台线程（建窗之后、sidecar 之前）。双击即出 loading 窗；植入期间再次双击由单实例聚焦已有窗口。
+
+### DeepSeek 模型列表不可获取且为静态
+
+- 现象：Google/OpenAI「获取可用模型」正常，DeepSeek 只有内置三个且点取无弹窗。
+- 根因：内置 `deepseek-official`（`@deepseek-ai/dsh-llm-deepseek`）只带静态 `DEFAULT_MODELS`，不注册 `ctx.llm.registerModelDiscovery`；pi-ai 路由才有发现能力。
+- 修复：
+  - 新增内置主机插件 `assets/plugins/dsh-aio-live-models`，注册 `llm-deepseek` 发现，始终 `GET {baseURL}/models`，无静态回退；`contextWindow` 默认 256k，失败以可读错误上抛。
+  - `desktop-core` 的 `COMPANION_PLUGINS` 纳入该插件，首启同步进 profile。
+  - 受控种子补丁 `scripts/seed-kernel-patches.mjs` 把模型默认 `inputModalities` 改为 `["text","image"]`（识图默认开），只在 staging 副本执行。定价仍手动补。
+- 验证：新增 `test/aio-live-models.test.mjs`（5）与 `test/seed-kernel-patches.test.mjs`（2）；全量 758 项 757 通过（1 项 opt-in 跳过）；`cargo test` 通过；`build-aio.cmd -Verify` PASS，E2E 日志确认插件已同步且 DSH web 正常启动。
+
+## 八、仍未验证
+
+- DeepSeek 真实 `/models` 联调（需用户的 API Key 在应用内点「获取可用模型」实测）。
+- 用户既有 profile 在新版首启时的重植入与插件同步（E2E 用全新隔离数据验证，未覆盖长期已有 profile）。

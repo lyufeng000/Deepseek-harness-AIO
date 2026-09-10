@@ -1047,6 +1047,15 @@ fn boot_chain(state: &Arc<AppState>) {
         ),
     );
 
+    // 发行包内的插件与技能快照植入（首次约 3 万文件、约 1-2 分钟）。放在后台
+    // 启动链的最前面但晚于建窗，保证双击后立即有 loading 窗口反馈；必须在 sidecar
+    // 启动与 profile.migrateAndSync 之前完成。
+    match paths.seed_distribution_profile() {
+        Ok(true) => state.log.log("boot", "已植入发行包内的插件与技能快照"),
+        Ok(false) => {}
+        Err(e) => state.log.log("boot", &format!("插件与技能快照植入失败: {e}")),
+    }
+
     // 看门狗 + 运行状态标记（安装版）：意外崩溃后自动拉起并告知用户。
     // 先读上次运行状态（write_run_state 会覆盖 pid/cleanExit，必须先读），
     // 据此决定是否清扫孤儿进程。

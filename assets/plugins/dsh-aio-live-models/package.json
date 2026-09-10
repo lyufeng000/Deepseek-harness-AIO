@@ -1,0 +1,25 @@
+{
+  "name": "dsh-aio-live-models",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DSHEAC AIO 配套插件：为内置 DeepSeek 官方 provider 注册实时模型发现，向 provider 的 /models 端点请求模型列表（不使用静态 catalog）。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "engines": {
+    "dsh": ">=0.0.1",
+    "node": ">=20.0.0"
+  },
+  "dsh": {
+    "runtime": "host"
+  },
+  "files": [
+    "lib"
+  ],
+  "license": "MIT"
+}

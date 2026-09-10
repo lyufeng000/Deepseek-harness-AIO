@@ -13,6 +13,7 @@ const read = (rel) => readFileSync(join(root, rel), 'utf8');
 const KEEP_SKINS = [];
 
 const KEEP_PLUGIN_DIRS = [
+  'dsh-aio-live-models',
   'dsh-aio-ui-compat',
   'dsh-auto-compact', 'dsh-balance', 'dsh-better-sidebar', 'dsh-composer-dynamic-island',
   'dsh-plugin-manager',
@@ -21,7 +22,7 @@ const KEEP_PLUGIN_DIRS = [
 
 // Active Tauri sidecar registry; frozen Electron files are not the source of truth.
 const KEEP_PLUGIN_IDS = [
-  'auto-compact', 'balance', 'better-sidebar', 'composer-dynamic-island',
+  'aio-live-models', 'auto-compact', 'balance', 'better-sidebar', 'composer-dynamic-island',
   'dsh-undo', 'plugin-manager', 'plugin-shield',
 ].sort();
 
@@ -82,7 +83,7 @@ test('插件：assets/plugins 包含保留插件及内核 UI 兼容包', () => {
   }
 });
 
-test('插件：active sidecar COMPANION_PLUGINS 恰为保留的 7 个 id', () => {
+test('插件：active sidecar COMPANION_PLUGINS 恰为保留的 8 个 id', () => {
   const main = read('sidecar/src/desktop-core.ts');
   const m = main.match(/const COMPANION_PLUGINS: CompanionEntry\[\] = \[([\s\S]*?)\];/);
   assert.ok(m, 'sidecar 中找不到 COMPANION_PLUGINS 定义');

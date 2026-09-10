@@ -81,11 +81,8 @@ pub fn run() {
             );
             let log = std::sync::Arc::new(logging::Logger::open(&paths.logs_dir));
             client_update::resume_before_boot(&paths);
-            match paths.seed_distribution_profile() {
-                Ok(true) => log.log("boot", "已植入发行包内的插件与技能快照"),
-                Ok(false) => {}
-                Err(e) => log.log("boot", &format!("插件与技能快照植入失败: {e}")),
-            }
+            // 插件与技能快照的植入（首次约 3 万文件）移到 boot_chain 后台线程执行，
+            // 让主窗先显示 loading 页；否则首次启动会有很长一段时间没有任何窗口。
             let state = Arc::new(AppState::new(paths, log));
             let _ = state.app.set(app.handle().clone());
             app.manage(state.clone());
