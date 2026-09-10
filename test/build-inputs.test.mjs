@@ -22,6 +22,7 @@ test('build-inputs workflow downloads, verifies and builds', () => {
   assert.match(workflow, /verify-build-inputs\.ps1/);
   assert.match(workflow, /build-aio-package\.ps1 -ProfileSeedDir/);
   assert.match(workflow, /softprops\/action-gh-release@v2/);
+  assert.equal((workflow.match(/a\/dist\/SHA256SUMS\.txt/g) || []).length, 1, 'release upload must include only one checksum manifest');
 });
 
 test('build-inputs scripts expose package and verify paths', () => {
