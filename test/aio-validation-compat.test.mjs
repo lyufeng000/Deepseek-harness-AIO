@@ -8,7 +8,7 @@ const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => fs.readFileSync(path.join(root, rel), 'utf8');
 
 test('5.x validation entrypoints are backed by AIO implementations', () => {
-  for (const rel of ['boot-smoke.js', 'gui-smoke.js', 'update-smoke.js', 'tauri-shell/stage-resources.mjs', 'tauri-shell/make-portable.mjs']) {
+  for (const rel of ['scripts/smoke/boot-smoke.js', 'scripts/smoke/gui-smoke.js', 'scripts/smoke/update-smoke.js', 'tauri-shell/stage-resources.mjs', 'tauri-shell/make-portable.mjs']) {
     assert.ok(fs.existsSync(path.join(root, rel)), `${rel} is missing`);
   }
   assert.match(read('tauri-shell/stage-resources.mjs'), /tauri-app.*scripts.*stage\.ts/s);
@@ -70,7 +70,7 @@ test('every Tauri bundle rebuilds and privacy-checks its seed before staging', (
 });
 
 test('AIO update smoke rejects client self-update exposure', () => {
-  const smoke = read('update-smoke.js');
+  const smoke = read('scripts/smoke/update-smoke.js');
   assert.match(smoke, /client auto-update scripts/);
   assert.match(smoke, /plugin auto-update must default to disabled/);
 });

@@ -8,7 +8,7 @@
             Reference = 'references/tauri-shell.md'
             Level = 'runtime'
             Tests = @('test/aio-validation-compat.test.mjs', 'test/sidecar-rpc.test.mjs')
-            Smoke = @('node boot-smoke.js', 'node gui-smoke.js')
+            Smoke = @('node scripts/smoke/boot-smoke.js', 'node scripts/smoke/gui-smoke.js')
         },
         @{
             Name = 'aio-dependency-patches'
@@ -53,7 +53,7 @@
             Reference = 'references/updates-and-packaging.md'
             Level = 'package'
             Tests = @('test/aio-validation-compat.test.mjs', 'test/installer-nsh-tauri.test.mjs', 'test/lite-manifest.test.mjs')
-            Smoke = @('node update-smoke.js')
+            Smoke = @('node scripts/smoke/update-smoke.js')
         },
         @{
             Name = 'aio-presets-profile'
@@ -62,7 +62,7 @@
             Reference = 'references/presets-and-profile.md'
             Level = 'full'
             Tests = @('test/preset-sync.test.mjs', 'test/patch-row-heal.test.mjs', 'test/resolve-profile.test.mjs', 'test/profile-module-heal.test.mjs')
-            Smoke = @('node boot-smoke.js')
+            Smoke = @('node scripts/smoke/boot-smoke.js')
         },
         @{
             Name = 'aio-balance-pricing'
@@ -89,16 +89,16 @@
             Reference = 'references/dsh-plugins.md'
             Level = 'full'
             Tests = @('test/skin-chrome-zindex.test.mjs', 'test/skin-switch-css.test.mjs', 'test/skin-switch-profile.test.mjs')
-            Smoke = @('node gui-smoke.js')
+            Smoke = @('node scripts/smoke/gui-smoke.js')
         },
         @{
             Name = 'aio-update-boundary'
             Domain = 'updates-packaging'
-            Pattern = '^update-smoke\.js$'
+            Pattern = '^scripts/smoke/update-smoke\.js$'
             Reference = 'references/updates-and-packaging.md'
             Level = 'package'
             Tests = @('test/aio-validation-compat.test.mjs', 'test/plugin-updater.test.mjs')
-            Smoke = @('node update-smoke.js')
+            Smoke = @('node scripts/smoke/update-smoke.js')
         },
         @{
             Name = 'aio-electron-fallback'
@@ -107,7 +107,7 @@
             Reference = 'references/sidecar-and-bridge.md'
             Level = 'runtime'
             Tests = @('test/bundled-files.test.mjs', 'test/recovery-integration.test.mjs')
-            Smoke = @('node boot-smoke.js')
+            Smoke = @('node scripts/smoke/boot-smoke.js')
         },
         @{
             Name = 'tauri-rust'
@@ -116,7 +116,7 @@
             Reference = 'references/tauri-shell.md'
             Level = 'runtime'
             Tests = @('test/bridge-preload-parity.test.ts')
-            Smoke = @('cd tauri-shell; cargo run -- --bridge-test', 'node gui-smoke.js')
+            Smoke = @('cd tauri-shell; cargo run -- --bridge-test', 'node scripts/smoke/gui-smoke.js')
         },
         @{
             Name = 'sidecar-bridge'
@@ -143,7 +143,7 @@
                 'test/client-updater-proxy.test.ts',
                 'test/client-updater-resume.test.ts'
             )
-            Smoke = @('node update-smoke.js')
+            Smoke = @('node scripts/smoke/update-smoke.js')
         },
         @{
             Name = 'agent-update'
@@ -195,7 +195,7 @@
                 'test/skin-switch-profile.test.ts',
                 'test/widget-theme.test.ts'
             )
-            Smoke = @('node gui-smoke.js')
+            Smoke = @('node scripts/smoke/gui-smoke.js')
         },
         @{
             Name = 'bundled-skills'
@@ -204,7 +204,7 @@
             Reference = 'references/presets-and-profile.md'
             Level = 'full'
             Tests = @()
-            Smoke = @('node boot-smoke.js')
+            Smoke = @('node scripts/smoke/boot-smoke.js')
         },
         @{
             Name = 'openclaw-bridge'
@@ -321,7 +321,7 @@
                 'test/resolve-profile.test.ts',
                 'test/profile-module-heal.test.ts'
             )
-            Smoke = @('node boot-smoke.js')
+            Smoke = @('node scripts/smoke/boot-smoke.js')
         },
         @{
             Name = 'shortcuts'
@@ -352,7 +352,7 @@
             Reference = 'references/product-services.md'
             Level = 'runtime'
             Tests = @()
-            Smoke = @('node gui-smoke.js')
+            Smoke = @('node scripts/smoke/gui-smoke.js')
         },
         @{
             Name = 'file-preview'
@@ -415,7 +415,7 @@
                 'test/installer-takeover.test.ts',
                 'test/verify-dist-fresh.test.ts'
             )
-            Smoke = @('node update-smoke.js')
+            Smoke = @('node scripts/smoke/update-smoke.js')
         },
         @{
             Name = 'electron-fallback'

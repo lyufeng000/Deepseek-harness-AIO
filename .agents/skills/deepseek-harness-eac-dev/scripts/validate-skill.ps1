@@ -491,9 +491,9 @@ if ($repoRoot -and (Test-Path -LiteralPath $testRunnerPath -PathType Leaf)) {
 }
 
 $smokeScripts = @(
-    'boot-smoke.js',
-    'gui-smoke.js',
-    'update-smoke.js',
+    'scripts/smoke/boot-smoke.js',
+    'scripts/smoke/gui-smoke.js',
+    'scripts/smoke/update-smoke.js',
     'tauri-shell\stage-resources.mjs',
     'tauri-shell\make-portable.mjs'
 )

@@ -40,15 +40,15 @@ npm test
 
 ### V4 运行时
 
-- `boot-smoke.js`
-- `gui-smoke.js`
+- `scripts/smoke/boot-smoke.js`
+- `scripts/smoke/gui-smoke.js`
 - 中文路径、浮窗、托盘、退出零孤儿等专项
 
 ### V5 分发
 
 自动化部分：
 
-- `update-smoke.js`
+- `scripts/smoke/update-smoke.js`
 - `upgrade-test-441.js`
 - `stage-resources.mjs`
 - Tauri NSIS 构建

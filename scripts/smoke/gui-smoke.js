@@ -6,7 +6,7 @@ const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 
-const repo = __dirname;
+const repo = path.resolve(__dirname, '..', '..');
 const exe = process.env.DSH_SMOKE_EXE || path.join(repo, 'tauri-app', 'target', 'release', 'DSHEAC AIO.exe');
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-aio-gui-'));
 const home = path.join(work, 'home');

@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
-const repo = __dirname;
+const repo = path.resolve(__dirname, '..', '..');
 const packageJson = JSON.parse(fs.readFileSync(path.join(repo, 'package.json'), 'utf8'));
 const tauriConfig = JSON.parse(fs.readFileSync(path.join(repo, 'tauri-app', 'tauri.conf.json'), 'utf8'));
 const ipc = fs.readFileSync(path.join(repo, 'tauri-app', 'src', 'ipc.rs'), 'utf8');

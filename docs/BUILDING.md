@@ -79,9 +79,9 @@ npm.cmd --prefix .\tauri-app run sidecar:check
 npm.cmd --prefix .\tauri-app run sidecar:build
 node --test --test-concurrency=1 .\test\*.test.mjs
 cargo test --locked --manifest-path .\tauri-app\Cargo.toml
-node .\boot-smoke.js
-node .\gui-smoke.js
-node .\update-smoke.js
+node .\scripts/smoke/boot-smoke.js
+node .\scripts/smoke/gui-smoke.js
+node .\scripts/smoke/update-smoke.js
 node .\tauri-shell\make-portable.mjs
 ```
 

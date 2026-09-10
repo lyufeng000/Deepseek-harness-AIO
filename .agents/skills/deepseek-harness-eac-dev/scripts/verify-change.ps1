@@ -363,13 +363,13 @@ if ($hasRequestedWork -and $effectiveLevel -in @('runtime', 'package')) {
         -Label 'Boot smoke' `
         -WorkingDirectory $root `
         -Executable 'node' `
-        -Arguments @('boot-smoke.js')
+        -Arguments @('scripts/smoke/boot-smoke.js')
     Add-AutomatedCheck `
         -Id 'gui-smoke' `
         -Label 'GUI smoke' `
         -WorkingDirectory $root `
         -Executable 'node' `
-        -Arguments @('gui-smoke.js')
+        -Arguments @('scripts/smoke/gui-smoke.js')
 }
 
 if ($hasRequestedWork -and $effectiveLevel -eq 'package') {
@@ -378,7 +378,7 @@ if ($hasRequestedWork -and $effectiveLevel -eq 'package') {
         -Label 'Update smoke' `
         -WorkingDirectory $root `
         -Executable 'node' `
-        -Arguments @('update-smoke.js')
+        -Arguments @('scripts/smoke/update-smoke.js')
     Add-AutomatedCheck `
         -Id 'upgrade-smoke' `
         -Label 'Upgrade smoke' `

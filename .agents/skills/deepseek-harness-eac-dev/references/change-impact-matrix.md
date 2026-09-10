@@ -61,7 +61,7 @@
 
 | 修改点 | 契约测试 | 运行验收 |
 | --- | --- | --- |
-| `client-updater.js` | `client-updater-*`、`client-update-platform` | `update-smoke.js` |
+| `client-updater.js` | `client-updater-*`、`client-update-platform` | `scripts/smoke/update-smoke.js` |
 | `updater.js` | `updater-*`、`update-mirror-chain` | Agent 更新 mock/回退 |
 | `plugin-updater.js` | `plugin-updater.test.ts` | 插件 staging 与 profile 同步 |
 | `installer-hooks.nsh` | installer takeover 系列 | 真实静默升级 |

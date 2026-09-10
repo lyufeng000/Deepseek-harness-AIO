@@ -55,7 +55,7 @@
 2. 保持 SHA-256、断点恢复、镜像回退和无空间错误处理。
 3. 更新失败保留旧程序并重启旧版本。
 4. 检查 sidecar 进度通知和 Rust 更新页。
-5. 运行全部 `client-updater-*`、V2 和 `update-smoke.js`。
+5. 运行全部 `client-updater-*`、V2 和 `scripts/smoke/update-smoke.js`。
 6. 修改 apply/installer 时执行 V5。
 
 便携目录树交换还必须：

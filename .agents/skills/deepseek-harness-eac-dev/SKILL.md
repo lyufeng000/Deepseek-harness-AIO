@@ -101,8 +101,8 @@ description: 面向 Deepseek Harness EAC 源码仓库的全栈开发与维护技
 - **V1 定向**：类型检查、语法检查、相关测试文件。
 - **V2 全量**：`dsh-desktop` 下运行 `npm test`。
 - **V3 壳契约**：Rust 检查、sidecar/bridge 契约测试。
-- **V4 运行时**：`boot-smoke.js`、`gui-smoke.js` 或专项运行验证。
-- **V5 分发**：`update-smoke.js`、升级测试、NSIS、便携包和真实安装树。
+- **V4 运行时**：`scripts/smoke/boot-smoke.js`、`scripts/smoke/gui-smoke.js` 或专项运行验证。
+- **V5 分发**：`scripts/smoke/update-smoke.js`、升级测试、NSIS、便携包和真实安装树。
 
 根据影响面选择最低充分级别。不要用 V1 冒充跨层、更新或安装链路的完整验收。
 
