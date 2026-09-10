@@ -16,6 +16,22 @@ DeepSeek Harness（dsh）的 Windows 桌面客户端：内置独立 Node 运行�
 4.4.0（修复设置页「Skills 与 MCP → 打开目录」失效）→
 4.5.0（本版：内核升级 0.1.1-rc.2 + 内置 dsh-market 社区插件市场）。
 
+## [Unreleased] — 2026-09-10
+
+### 变更：图片解析交还原生多模态模型
+- DeepSeek 已提供原生多模态，不再需要「专门的图像解析模型」：
+  - 受控种子补丁继续把 `dsh-llm-deepseek` 模型默认 `inputModalities` 设为
+    `["text","image"]`，静态默认模型与实时发现采纳的新模型都声明图片输入，
+    附件图片走内核原生 ImageBlock → provider `image_url`/`file_id` 链路，
+    `read_image` 与附件准入按真实模态放行。
+  - 新增受控种子补丁把 `dsh-webui` 辅助视觉自动降级 `textModelImageFallback`
+    默认改为 `false`：附件图片不再被另一个视觉模型（默认 sensenova）转写成
+    `[图片·辅助视觉描述: …]`，也不再包装 `resolveModelInfo` 掩盖真实模态。
+    模型确实不支持图片时由内核按原生规则拒绝；`vision_describe` 工具与
+    浏览器截图链路保留，可按需显式调用。
+- 补丁仍只作用于 staging 的 `resources/profile-seed` 副本，幂等、带稳定锚点与
+  “目标缺失/上游改写即跳过”的诊断，不改上游审核快照与构建输入。
+
 ## [1.2.3] — 2026-09-10
 
 ### 验证：安装版应用内自动更新

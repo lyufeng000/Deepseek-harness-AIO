@@ -155,7 +155,7 @@ build-aio.cmd -Verify
 - 修复：
   - 新增内置主机插件 `assets/plugins/dsh-aio-live-models`，注册 `llm-deepseek` 发现，始终 `GET {baseURL}/models`，无静态回退；`contextWindow` 默认 256k，失败以可读错误上抛。
   - `desktop-core` 的 `COMPANION_PLUGINS` 纳入该插件，首启同步进 profile。
-  - 受控种子补丁 `scripts/seed-kernel-patches.mjs` 把模型默认 `inputModalities` 改为 `["text","image"]`（识图默认开），只在 staging 副本执行。定价仍手动补。
+  - 受控种子补丁 `scripts/seed-kernel-patches.mjs` 把模型默认 `inputModalities` 改为 `["text","image"]`（原生识图默认开），并把 `dsh-webui` 辅助视觉自动降级 `textModelImageFallback` 默认改为 `false`（图片交还原生模型，不再经专用视觉模型转写），只在 staging 副本执行。定价仍手动补。
 - 验证：新增 `test/aio-live-models.test.mjs`（5）与 `test/seed-kernel-patches.test.mjs`（2）；全量 758 项 757 通过（1 项 opt-in 跳过）；`cargo test` 通过；`build-aio.cmd -Verify` PASS，E2E 日志确认插件已同步且 DSH web 正常启动。
 
 ## 八、仍未验证

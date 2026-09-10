@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { cachedStep, writeJson } from './build-cache.mjs';
-import { patchSeedKernel } from './seed-kernel-patches.mjs';
+import { applySeedPatches } from './seed-kernel-patches.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 const resolve = value => path.join(root, value);
@@ -32,8 +32,9 @@ try {
   node('scripts/build-native-runtime.mjs');
   step('staging', ['package.json', 'package-lock.json', 'sidecar/dist', 'assets', 'node_modules', 'vendor', 'tauri-app/scripts/stage.ts', 'scripts/patch-done-pill.cjs', 'scripts/seed-kernel-patches.mjs', path.relative(root, seed)], ['tauri-app/resources'], () => {
     node('tauri-app/scripts/stage.ts');
-    // 受控种子补丁只作用于打包副本：DeepSeek 模型默认识图开。
-    const patched = patchSeedKernel(resolve('tauri-app/resources/profile-seed'));
-    console.log(`[build] seed-kernel-patch: ${patched.applied ? 'applied' : 'skipped'} ${patched.reason ?? ''}`);
+    // 受控种子补丁只作用于打包副本：图片交给原生多模态模型，不再依赖专门的图像解析模型。
+    for (const patched of applySeedPatches(resolve('tauri-app/resources/profile-seed'))) {
+      console.log(`[build] seed-patch ${patched.id}: ${patched.applied ? 'applied' : 'skipped'} ${patched.reason ?? ''}`);
+    }
   }, toolchain);
 } finally { writeJson(resolve('temp/build-metrics/prepare.json'), results); }

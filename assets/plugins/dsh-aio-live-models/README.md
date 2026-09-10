@@ -23,9 +23,10 @@ DeepSeek 无法向 provider 查询，列表始终是内置的三个模型。其�
 - 失败不静默：连接失败、HTTP 非 2xx、空列表都以可读中文错误上抛，由界面呈现。
 
 发现协议本身只承载 `id/name/contextWindow/maxTokens`，无法携带 `inputModalities`；
-DeepSeek 新模型的「识图默认开」由构建期的受控种子补丁
+DeepSeek 新模型的「原生识图默认开」由构建期的受控种子补丁
 （`scripts/seed-kernel-patches.mjs`）把 `dsh-llm-deepseek` 的模型 `inputModalities`
-默认值改为 `["text","image"]` 实现。定价仍由用户在余额定价面板手动补充。
+默认值改为 `["text","image"]` 实现：图片交给当前选中的原生多模态模型直接理解，
+不再经过 `dsh-webui` 辅助视觉把图片转写成文本。定价仍由用户在余额定价面板手动补充。
 
 ## 目录
 

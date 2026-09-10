@@ -46,7 +46,11 @@ Tauri 的 `beforeBuildCommand` 是 `npm run prepare:bundle`，它调用唯一的
 3. `sidecar`：`tsc -p sidecar/tsconfig.json` 编译 sidecar 运行时。
 4. `seed-review`：`sanitize-public-seed.mjs` 对完整 seed 做隐私扫描与脱敏。
 5. `native`：`build-native-runtime.mjs` 构建 `fs-ext`（自带 Node ABI、源码、补丁与编译选项指纹缓存）。
-6. `staging`：`tauri-app/scripts/stage.ts` 装配 `tauri-app/resources`；随后对打包副本执行受控种子补丁 `scripts/seed-kernel-patches.mjs`（把 `dsh-llm-deepseek` 模型默认 `inputModalities` 改为 `["text","image"]`，使实时发现的新模型默认识图）。补丁只作用于 `tauri-app/resources/profile-seed`，不改上游审核快照，幂等且参与 staging 缓存指纹。
+6. `staging`：`tauri-app/scripts/stage.ts` 装配 `tauri-app/resources`；随后对打包副本执行受控种子补丁 `scripts/seed-kernel-patches.mjs`：
+   - `deepseek-native-image`：把 `dsh-llm-deepseek` 模型默认 `inputModalities` 改为 `["text","image"]`，静态默认模型与实时发现采纳的新模型都声明图片输入，走内核原生 ImageBlock → provider 链路；
+   - `webui-vision-fallback-off`：把 `dsh-webui` 辅助视觉 `textModelImageFallback` 默认改为 `false`，不再把附件图片交给另一个视觉模型转写文本（`vision_describe` 工具仍可按需显式调用）。
+
+   补丁只作用于 `tauri-app/resources/profile-seed`，不改上游审核快照，幂等且参与 staging 缓存指纹。
 
 缓存命中判定基于内容指纹（含脚本自身、依赖锁文件、seed、原生模块源码与工具链元数据），命中后仍会校验输出内容；不依赖目录存在或时间戳。缓存状态写入 `temp/build-cache/*.json`，耗时写入 `temp/build-metrics/prepare.json`。
 
