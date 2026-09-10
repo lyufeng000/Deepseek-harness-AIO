@@ -23,6 +23,8 @@
     "build:icon": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-icon.ps1",
     "build:native": "node scripts/build-native-runtime.mjs",
     "seed:sanitize": "node scripts/sanitize-public-seed.mjs",
+    "build-inputs:package": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-build-inputs.ps1",
+    "build-inputs:verify": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-build-inputs.ps1",
     "electron:fetch": "node node_modules/electron/install.js",
     "pretest": "npm --prefix tauri-app run sidecar:build",
     "test": "node --test \"test/*.test.mjs\""

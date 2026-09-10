@@ -1,0 +1,91 @@
+name: AIO build
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_inputs_tag:
+        description: Build-inputs release tag
+        required: true
+        default: build-inputs-v1.2.0
+        type: string
+      release_tag:
+        description: Optional application release tag to publish
+        required: false
+        default: ''
+        type: string
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      BUILD_INPUTS_TAG: ${{ inputs.build_inputs_tag || 'build-inputs-v1.2.0' }}
+      RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Download and verify build inputs
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $download = Join-Path $env:GITHUB_WORKSPACE 'temp\build-inputs\release'
+          $extract = Join-Path $env:GITHUB_WORKSPACE 'temp\build-inputs\extracted'
+          New-Item -ItemType Directory -Path $download -Force | Out-Null
+          gh release download $env:BUILD_INPUTS_TAG --repo $env:GITHUB_REPOSITORY --pattern 'DSHEAC-AIO-build-inputs-*.zip' --pattern 'DSHEAC-AIO-build-inputs-*.zip.sha256' --dir $download --clobber
+          $archive = Get-ChildItem -LiteralPath $download -Filter 'DSHEAC-AIO-build-inputs-*.zip' -File | Select-Object -First 1
+          $checksum = Get-ChildItem -LiteralPath $download -Filter 'DSHEAC-AIO-build-inputs-*.zip.sha256' -File | Select-Object -First 1
+          if (-not $archive -or -not $checksum) { throw 'Build-inputs release assets were not downloaded' }
+          & .\scripts\verify-build-inputs.ps1 -Archive $archive.FullName -ChecksumFile $checksum.FullName -ExtractTo $extract
+          $manifest = Get-Content -LiteralPath (Join-Path $extract 'build-inputs-manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+          $seed = Join-Path $extract $manifest.profileSeed.directory
+          Move-Item -LiteralPath (Join-Path $extract 'vendor') -Destination (Join-Path $env:GITHUB_WORKSPACE 'vendor')
+          "PROFILE_SEED_DIR=$seed" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          npm ci
+          npm --prefix tauri-app ci
+
+      - name: Build installer and portable package
+        shell: pwsh
+        run: |
+          & .\scripts\build-aio-package.ps1 -ProfileSeedDir $env:PROFILE_SEED_DIR
+          node .\scripts\verify-dist-fresh.js
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSHEAC-AIO-build
+          path: |
+            dist/*.exe
+            dist/*.txt
+            dist/portable/*.zip
+            dist/portable/*.txt
+          if-no-files-found: error
+
+      - name: Publish application release
+        if: ${{ env.RELEASE_TAG != '' }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if (-not (gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY 2>$null)) {
+            gh release create $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --title "DSHEAC AIO $env:RELEASE_TAG" --generate-notes
+          }
+          gh release upload $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY dist\*.exe dist\portable\*.zip dist\SHA256SUMS.txt dist\portable\SHA256SUMS.txt --clobber

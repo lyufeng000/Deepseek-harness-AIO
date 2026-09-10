@@ -92,6 +92,22 @@ node --test --test-concurrency=1 test\composer-dynamic-island-builtin.test.mjs t
 cargo test --locked --manifest-path tauri-app\Cargo.toml
 ```
 
+## 构建输入发布
+
+本地生成 CI 所需的完整构建输入包：
+
+```powershell
+npm run build-inputs:package
+```
+
+默认输出到 `dist\build-inputs`：
+
+- `DSHEAC-AIO-build-inputs-v<version>.zip`
+- `DSHEAC-AIO-build-inputs-v<version>.zip.sha256`
+- `build-inputs-manifest.json`
+
+CI 使用 `.github/workflows/aio-build.yml` 下载并校验该 Release 资产，然后执行完整 AIO 构建。
+
 ## 已知边界
 
 - 完整 `npm test` 依赖历史外部夹具；夹具缺失时不能把全量测试结果标记为通过。
