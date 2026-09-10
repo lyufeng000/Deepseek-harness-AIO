@@ -60,6 +60,14 @@ test('scroll listener is removed on teardown and opening refreshes position', ()
   assert.match(source, /const open = \(\) => \{\s+layout\(\);\s+setOpen\(true\)/);
 });
 
+test('composer mutations relayout before paint and placement updates atomically', () => {
+  assert.match(source, /mutations\.some\(mutationTouchesComposer\)\) return;[\s\S]*?scan\(\);/);
+  assert.match(source, /const clearItemPlacement = \(item\) =>/);
+  assert.match(source, /Apply the new placement before clearing stale placement/);
+  assert.match(source, /data-dshi-selected=true/);
+  assert.match(source, /resizeObserver\.observe\(item\.node\);\s+layout\(\);/);
+});
+
 test('button bounds are included when a toolbar wrapper shrinks', () => {
   const measureSource = source.slice(source.indexOf('    function measureCandidate('), source.indexOf('    function packItems('));
   const measure = vm.runInNewContext(`${measureSource}; measureCandidate`, {

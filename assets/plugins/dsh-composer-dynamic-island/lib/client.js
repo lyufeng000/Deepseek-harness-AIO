@@ -12,6 +12,7 @@ window.__ModuleLoader__.load({
     const TRIGGER_ATTR = "data-dsh-island-trigger";
     const PANEL_ATTR = "data-dsh-island-panel";
     const ITEM_ATTR = "data-dsh-island-item";
+    const SELECTED_ATTR = "data-dshi-selected";
     const LEFT_SLOT = "conversation.input.left";
     const RIGHT_SLOT = "conversation.input.right";
     const MODEL_SLOT = "conversation.input.model";
@@ -40,6 +41,7 @@ window.__ModuleLoader__.load({
       "[data-dsh-island-row]{position:relative!important;flex-wrap:nowrap!important;gap:8px!important;min-height:36px!important;isolation:isolate}",
       "[data-dsh-island-surface]{display:inline-flex;align-items:center;flex:0 0 38px;width:38px;min-width:38px;height:30px;overflow:visible}",
       "[data-composer-card]:not([data-dsh-island-ready]) [data-dsh-island-surface]{display:none!important}",
+      "[data-dsh-island-row] [data-dshi-selected=true]:not([data-dsh-island-item]){visibility:hidden!important;pointer-events:none!important}",
       "[data-dsh-island-panel]{position:fixed!important;z-index:40!important;box-sizing:border-box!important;left:var(--dshi-panel-left)!important;top:var(--dshi-panel-top)!important;width:var(--dshi-panel-width)!important;height:var(--dshi-panel-height)!important;display:block!important;overflow:visible!important;border:1px solid var(--dsw-alias-border-l2-darkmode-thin)!important;border-radius:16px!important;background:color-mix(in srgb,var(--dsw-specific-input-major) 92%,transparent)!important;box-shadow:0 12px 30px rgba(0,0,0,.18)!important;backdrop-filter:blur(18px) saturate(1.15)!important;-webkit-backdrop-filter:blur(18px) saturate(1.15)!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important;transform:translateY(14px) scale(.96)!important;transform-origin:left bottom!important;transition:opacity .18s ease,transform .22s cubic-bezier(.2,.8,.2,1),visibility 0s linear .22s!important}",
       "[data-dsh-island-row][data-dsh-island-open=true] [data-dsh-island-panel]{opacity:1!important;visibility:visible!important;pointer-events:auto!important;transform:translateY(0) scale(1)!important;transition-delay:0s!important}",
       "[data-dsh-island-panel]::after{content:'';position:absolute;right:0;bottom:-8px;left:0;height:8px}",
@@ -545,6 +547,10 @@ window.__ModuleLoader__.load({
       row.dataset.dshIslandOpen = "false";
       tools.setAttribute("data-dsh-island-tools", "");
       trailing.setAttribute("data-dsh-island-trailing", "");
+      for (const item of items) {
+        if (candidateSelected(item.candidate)) item.node.setAttribute(SELECTED_ATTR, "true");
+        else item.node.removeAttribute(SELECTED_ATTR);
+      }
 
       let pinned = false;
       let closeTimer = 0;
@@ -593,29 +599,33 @@ window.__ModuleLoader__.load({
         pinned = false;
         setOpen(false);
       };
+      const clearItemPlacement = (item) => {
+        item.node.removeAttribute(ITEM_ATTR);
+        item.node.removeAttribute(SELECTED_ATTR);
+        item.node.removeAttribute("data-dshi-menu-align");
+        item.node.removeAttribute("data-dshi-menu-direction");
+        item.node.style.removeProperty("--dshi-item-left");
+        item.node.style.removeProperty("--dshi-item-top");
+      };
       const layout = () => {
         if (disposed || !row.isConnected) return;
-        for (const item of items) {
-          item.node.removeAttribute(ITEM_ATTR);
-          item.node.removeAttribute("data-dshi-menu-align");
-          item.node.removeAttribute("data-dshi-menu-direction");
-          item.node.style.removeProperty("--dshi-item-left");
-          item.node.style.removeProperty("--dshi-item-top");
-        }
-
         const selectedItems = items.filter((item) => candidateSelected(item.candidate));
         if (!fixedPositionIsReliable(panel) || selectedItems.some((item) => !fixedPositionIsReliable(item.node))) {
           delete card.dataset.dshIslandReady;
-          for (const item of selectedItems) item.node.removeAttribute(ITEM_ATTR);
+          for (const item of items) clearItemPlacement(item);
           return;
         }
         card.dataset.dshIslandReady = "true";
         const measuredItems = selectedItems.map((item) => measureCandidate(item.candidate));
         const packed = packItems(measuredItems, row.getBoundingClientRect(), trigger.getBoundingClientRect());
         const placedNodes = new Set(packed.placed.map((placement) => placement.item.node));
-        for (const item of selectedItems) {
-          if (placedNodes.has(item.node)) item.node.setAttribute(ITEM_ATTR, item.candidate.id);
-          else item.node.removeAttribute(ITEM_ATTR);
+        // Apply the new placement before clearing stale placement from unplaced
+        // items. A paint must never expose a selected tool back in the composer
+        // row while the island is being repositioned.
+        for (const item of items) {
+          if (!placedNodes.has(item.node)) continue;
+          item.node.setAttribute(ITEM_ATTR, item.candidate.id);
+          item.node.setAttribute(SELECTED_ATTR, "true");
         }
         const panelOrigin = fixedPositionOrigin(panel);
         panel.style.setProperty("--dshi-panel-left", `${packed.left - panelOrigin.left}px`);
@@ -637,6 +647,9 @@ window.__ModuleLoader__.load({
             item.node.dataset.dshiMenuAlign = itemLeft + menuWidth <= window.innerWidth - 8 ? "left" : "right";
             item.node.dataset.dshiMenuDirection = itemTop - menuHeight - 18 >= 8 ? "up" : "down";
           }
+        }
+        for (const item of items) {
+          if (!placedNodes.has(item.node)) clearItemPlacement(item);
         }
       };
       const scheduleItemLayout = () => {
@@ -675,7 +688,7 @@ window.__ModuleLoader__.load({
       const resizeObserver = new ResizeObserver(layout);
       resizeObserver.observe(card);
       for (const item of items) resizeObserver.observe(item.node);
-      scheduleItemLayout();
+      layout();
 
       const state = {
         card,
@@ -706,6 +719,7 @@ window.__ModuleLoader__.load({
             item.node.removeEventListener("focusin", item.onEnter);
             item.node.removeEventListener("click", scheduleItemLayout);
             item.node.removeAttribute(ITEM_ATTR);
+            item.node.removeAttribute(SELECTED_ATTR);
             item.node.removeAttribute("data-dshi-menu-align");
             item.node.removeAttribute("data-dshi-menu-direction");
             item.node.style.removeProperty("--dshi-item-left");
@@ -828,7 +842,14 @@ window.__ModuleLoader__.load({
         scheduleScan();
       };
       const observer = new MutationObserver((mutations) => {
-        if (mutations.some(mutationTouchesComposer)) scheduleScan();
+        if (!mutations.some(mutationTouchesComposer)) return;
+        // MutationObserver callbacks run before paint. Rescan synchronously so a
+        // React update cannot expose selected tools in the composer for one frame.
+        if (scanFrame !== 0) {
+          window.cancelAnimationFrame(scanFrame);
+          scanFrame = 0;
+        }
+        scan();
       });
       observer.observe(document.body, { childList: true, subtree: true });
       scan();

@@ -21,7 +21,7 @@ import { healProfileModuleShadowing } from './lib/profile-module-heal';
 import { createGuard } from './lib/plugin-guard';
 import { configLinesFor, removeBundledRowDuplicates, collectBundleEntryIds } from './lib/patch-row-heal';
 import { syncBundledPresets, ensureDefaultAgentPreset } from './lib/preset-sync';
-import { togglePluginInPatch, removePluginFromPatch, hasEntryId } from './lib/plugin-manager-patch';
+import { togglePluginInPatch, ensurePluginDisabledInPatch, removePluginFromPatch, hasEntryId } from './lib/plugin-manager-patch';
 import { collectPluginRows } from './lib/plugin-manager-state';
 import { removeMarketDuplicate } from './lib/builtin-collision';
 import { assertProfileStartup, UPGRADE_TARGET } from './lib/profile-upgrade';
@@ -37,6 +37,8 @@ export const DESKTOP_PROFILE = 'web-desktop';
 // 随插件包一起拷贝到 profile 的许可与出处文件（存在才拷贝）。
 const EXTRA_PACKAGE_FILES = ['LICENSE', 'LICENSE.md', 'NOTICE', 'NOTICE.md', 'README.md', 'README.zh.md', 'README.zh-CN.md', 'THIRD-PARTY-NOTICES.md', 'EAC-VENDOR.json'];
 const COPY_STAMP = '.eac-copy-stamp.json';
+const COMPOSER_ISLAND_ID = 'composer-dynamic-island';
+const COMPOSER_ISLAND_DEFAULT_DISABLED_KEY = 'composerIslandDefaultDisabledMigrated';
 
 // 内置插件上游更新源（V4.3）：只登记「上游仍在 npm / GitHub 发布」的社区插件。
 const PLUGIN_UPDATE_SOURCES: Record<string, { npm?: string; github?: string }> = {
@@ -112,7 +114,7 @@ export function createDesktopCore(ctx: DesktopCoreCtx) {
   const COMPANION_PLUGINS: CompanionEntry[] = [
     { id: 'balance', name: '@deepseek-ai/dsh-balance' },
     { id: 'better-sidebar', name: 'dsh-better-sidebar', dir: 'dsh-better-sidebar' },
-    { id: 'composer-dynamic-island', name: 'dsh-composer-dynamic-island', dir: 'dsh-composer-dynamic-island' },
+    { id: 'composer-dynamic-island', name: 'dsh-composer-dynamic-island', dir: 'dsh-composer-dynamic-island', disabled: true },
     { id: 'auto-compact', name: 'dsh-auto-compact', dir: 'dsh-auto-compact' },
     { id: 'plugin-shield', name: 'dsh-plugin-shield', dir: 'dsh-plugin-shield' },
     { id: 'plugin-manager', name: '@deepseek-ai/dsh-plugin-manager' },
@@ -439,6 +441,19 @@ export function createDesktopCore(ctx: DesktopCoreCtx) {
       changed = true;
       log('boot', '已移除与 bundle 登记重复的 patch 行: ' + deduped.removed.map(String).join(', '));
     }
+    // 一次性迁移：旧版本把 Composer 灵动岛默认启用，输入时会短暂把工具控件
+    // 放回输入区。首次同步改为禁用；用户之后在插件管理中重新启用不会被覆盖。
+    const islandMigrationPending = !bundled.includes('dsh-composer-dynamic-island')
+      && !declaredBundleIds.has(COMPOSER_ISLAND_ID)
+      && pending.some((p) => p.id === COMPOSER_ISLAND_ID)
+      && loadSettings()[COMPOSER_ISLAND_DEFAULT_DISABLED_KEY] !== true;
+    if (islandMigrationPending) {
+      const disabledPatch = ensurePluginDisabledInPatch(patch, COMPOSER_ISLAND_ID, 'dsh-composer-dynamic-island');
+      if (disabledPatch !== patch) {
+        patch = disabledPatch;
+        changed = true;
+      }
+    }
     for (const p of pending) {
       if (hasEntryId(patch, p.id)) continue;
       if (bundled.includes(p.name) || declaredBundleIds.has(p.id)) continue;
@@ -453,6 +468,12 @@ export function createDesktopCore(ctx: DesktopCoreCtx) {
     if (changed) {
       fs.writeFileSync(patchFile, patch);
       log('boot', '已同步配套插件到 web profile: ' + pending.map((p) => p.id).join(', '));
+    }
+    if (islandMigrationPending) {
+      const settings = loadSettings();
+      settings[COMPOSER_ISLAND_DEFAULT_DISABLED_KEY] = true;
+      saveSettings(settings);
+      log('boot', '已将 Composer 灵动岛默认关闭（可在「设置 → 插件 → 管理」中重新启用）');
     }
   }
 

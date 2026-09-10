@@ -8,6 +8,7 @@
     - id: composer-dynamic-island
       name: 'dsh-composer-dynamic-island'
       config: {}
+      disabled: true
 - insert:
     - id: auto-compact
       name: 'dsh-auto-compact'

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { togglePluginInPatch, removePluginFromPatch, hasEntryId } from '../scripts/plugin-manager-patch.js';
+import { togglePluginInPatch, ensurePluginDisabledInPatch, removePluginFromPatch, hasEntryId } from '../scripts/plugin-manager-patch.js';
 
 // EAC 重写后的回归：上游正则版会吞掉目标条目之后的兄弟条目（数据丢失）。
 test('禁用中位条目不吞兄弟条目（上游 bug 回归）', () => {
@@ -99,4 +99,20 @@ test('移除：最后一个条目清空后留下空 insert 块会被清理', () 
 test('移除：id 白名单校验（防注入）', () => {
   assert.throws(() => removePluginFromPatch('- insert:\n', 'a b'), /非法字符/);
   assert.throws(() => removePluginFromPatch('', '../evil'), /非法字符/);
+});
+
+test('默认关闭迁移保留 insert 位置与 config，且重复执行不变化', () => {
+  const t = "- insert:\n    - id: composer-dynamic-island\n      name: 'dsh-composer-dynamic-island'\n      config: {}\n    - id: sibling\n      name: 'sibling'\n";
+  const once = ensurePluginDisabledInPatch(t, 'composer-dynamic-island', 'dsh-composer-dynamic-island');
+  assert.match(once, /- id: composer-dynamic-island\n      name: 'dsh-composer-dynamic-island'\n      config: {}\n      disabled: true/);
+  assert.ok(once.includes('- id: sibling'), '兄弟条目必须保留');
+  assert.equal(ensurePluginDisabledInPatch(once, 'composer-dynamic-island', 'dsh-composer-dynamic-island'), once, '已禁用时保持幂等');
+});
+
+test('默认关闭迁移可修正 disabled: false，也可补写缺失条目', () => {
+  const t = "- id: composer-dynamic-island\n  name: 'dsh-composer-dynamic-island'\n  disabled: false\n";
+  const fixed = ensurePluginDisabledInPatch(t, 'composer-dynamic-island', 'dsh-composer-dynamic-island');
+  assert.match(fixed, /disabled: true/);
+  const appended = ensurePluginDisabledInPatch('- insert:\n', 'composer-dynamic-island', 'dsh-composer-dynamic-island');
+  assert.match(appended, /- id: composer-dynamic-island\n  name: 'dsh-composer-dynamic-island'\n  disabled: true/);
 });

@@ -153,6 +153,39 @@ function togglePluginInPatch(text, id, enabled, name) {
 }
 
 /**
+ * 幂等地把指定插件条目标记为 disabled: true，但保留它原来的登记位置和
+ * config。用于默认关闭的配套插件迁移；用户之后重新启用时，不再调用本函数。
+ */
+function ensurePluginDisabledInPatch(text, id, name) {
+  if (typeof text !== 'string') throw new TypeError('text must be a string');
+  if (typeof id !== 'string' || !id) throw new TypeError('id must be a non-empty string');
+  if (!ID_RE.test(id)) throw new TypeError('id 含非法字符（仅允许字母/数字/下划线/点/连字符）: ' + id);
+  const pkgName = typeof name === 'string' && name ? name : id;
+  const disabledPropRe = /^[ \t]*disabled\s*:\s*(?:true|false)\s*(?:#.*)?$/;
+  const disabledTrueRe = /^[ \t]*disabled\s*:\s*true\s*(?:#.*)?$/;
+  const namePropRe = /^[ \t]*name\s*:/;
+  const { bom, eol, finalEol, lines: originalLines } = readPatch(text);
+  const lines = originalLines;
+  const block = findEntryBlock(lines, id, 1, Infinity) ?? findEntryBlock(lines, id, 0, 2);
+  if (!block) {
+    insertLines(lines, lines.length, ['', '# 插件管理（设置页「插件」栏）：关闭 ' + id,
+      '- id: ' + id, '  name: ' + yamlQuote(pkgName), '  disabled: true'], eol, finalEol);
+    return bom + lines.join('');
+  }
+  const disabledIdx = findPropLine(lines, block, disabledPropRe);
+  if (disabledIdx !== -1) {
+    const content = lineText(lines[disabledIdx]);
+    if (disabledTrueRe.test(content)) return text;
+    const terminator = lines[disabledIdx].slice(content.length);
+    lines[disabledIdx] = content.replace(/(disabled\s*:\s*)false\b/, '$1true') + terminator;
+    return bom + lines.join('');
+  }
+  const insertAt = block.end;
+  insertLines(lines, insertAt, [' '.repeat(block.indent + 2) + 'disabled: true'], eol, finalEol);
+  return bom + lines.join('');
+}
+
+/**
  * 从 patch 中彻底移除某插件的全部登记点：顶层条目（缩进 0-2）+ insert 内层
  * 条目（缩进 >=1）+ 关闭标记注释；顺带清理被掏空的孤立 `- insert:` 空块。
  * 用于「移除内置插件」（区别于 toggle 的禁用——移除后 sync 不再写回该行）。
@@ -193,4 +226,4 @@ function hasEntryId(text, id) {
   return new RegExp('id:\\s*' + escapedId + '(?![A-Za-z0-9_.-])').test(text);
 }
 
-module.exports = { togglePluginInPatch, removePluginFromPatch, hasEntryId };
+module.exports = { togglePluginInPatch, ensurePluginDisabledInPatch, removePluginFromPatch, hasEntryId };

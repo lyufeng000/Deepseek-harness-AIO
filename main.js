@@ -40,7 +40,7 @@ const {
 const { configLinesFor, removeBundledRowDuplicates, collectBundleEntryIds } = require('./patch-row-heal');
 const { syncBundledPresets, ensureDefaultAgentPreset } = require('./preset-sync');
 const { buildErrorDetail } = require('./error-detail');
-const { togglePluginInPatch, removePluginFromPatch, hasEntryId } = require('./scripts/plugin-manager-patch');
+const { togglePluginInPatch, ensurePluginDisabledInPatch, removePluginFromPatch, hasEntryId } = require('./scripts/plugin-manager-patch');
 const { collectPluginRows } = require('./plugin-manager-state');
 // v4Lite 核心内置插件（壳运行必需）：插件市场/保护中心/启停管理。
 // 其他内置插件可被「插件 → 管理」移除，核心组拒绝移除（原选择向导的
@@ -1730,10 +1730,13 @@ function startBalanceLoop() {
   if (balanceTimer.unref) balanceTimer.unref();
 }
 
+const COMPOSER_ISLAND_ID = 'composer-dynamic-island';
+const COMPOSER_ISLAND_DEFAULT_DISABLED_KEY = 'composerIslandDefaultDisabledMigrated';
+
 const COMPANION_PLUGINS = [
   { id: 'balance', name: '@deepseek-ai/dsh-balance' },
   { id: 'better-sidebar', name: 'dsh-better-sidebar', dir: 'dsh-better-sidebar' },
-  { id: 'composer-dynamic-island', name: 'dsh-composer-dynamic-island', dir: 'dsh-composer-dynamic-island' },
+  { id: 'composer-dynamic-island', name: 'dsh-composer-dynamic-island', dir: 'dsh-composer-dynamic-island', disabled: true },
   { id: 'auto-compact', name: 'dsh-auto-compact', dir: 'dsh-auto-compact' },
   { id: 'plugin-shield', name: 'dsh-plugin-shield', dir: 'dsh-plugin-shield' },
   { id: 'plugin-manager', name: '@deepseek-ai/dsh-plugin-manager' },
@@ -2255,6 +2258,20 @@ function syncCompanionPlugins() {
       changed = true;
       log('boot', '已移除与 bundle 登记重复的 patch 行: ' + deduped.removed.join(', '));
     }
+    // 一次性迁移：旧版本把 Composer 灵动岛默认启用，输入时会短暂把工具控件
+    // 放回输入区。首次同步改为禁用；用户之后在插件管理中重新启用不会被覆盖。
+    const islandSettings = updater.loadSettings(updCtx());
+    const islandMigrationPending = !bundled.includes('dsh-composer-dynamic-island')
+      && !declaredBundleIds.has(COMPOSER_ISLAND_ID)
+      && pending.some((p) => p.id === COMPOSER_ISLAND_ID)
+      && islandSettings[COMPOSER_ISLAND_DEFAULT_DISABLED_KEY] !== true;
+    if (islandMigrationPending) {
+      const disabledPatch = ensurePluginDisabledInPatch(patch, COMPOSER_ISLAND_ID, 'dsh-composer-dynamic-island');
+      if (disabledPatch !== patch) {
+        patch = disabledPatch;
+        changed = true;
+      }
+    }
     for (const p of pending) {
       if (hasEntryId(patch, p.id)) continue;
       // 已在 bundle 列表里的插件由其包内 patch 挂载，overlay 不能再写行
@@ -2273,6 +2290,11 @@ function syncCompanionPlugins() {
     if (changed) {
       fs.writeFileSync(patchFile, patch);
       log('boot', '已同步配套插件到 web profile: ' + pending.map((p) => p.id).join(', '));
+    }
+    if (islandMigrationPending) {
+      islandSettings[COMPOSER_ISLAND_DEFAULT_DISABLED_KEY] = true;
+      updater.saveSettings(updCtx(), islandSettings);
+      log('boot', '已将 Composer 灵动岛默认关闭（可在「设置 → 插件 → 管理」中重新启用）');
     }
   } catch (err) {
     log('boot', '同步配套插件失败: ' + err.message);

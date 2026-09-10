@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -74,12 +75,17 @@ test('Web adapter 无外传 API，并锁定焦点与卸载生命周期修复', (
   assert.doesNotMatch(client, /"aria-controls": panelId/);
   assert.match(client, /"aria-hidden": "true"/);
   assert.doesNotMatch(client, /\? "岛内" : "原位"/);
+  assert.match(client, /data-dshi-selected=true/);
+  assert.match(client, /mutations\.some\(mutationTouchesComposer\)\) return;[\s\S]*?scan\(\);/);
+  assert.match(client, /Apply the new placement before clearing stale placement/);
 });
 
 test('Electron 与 Tauri sidecar 同步注册插件和 GitHub 更新源', () => {
   for (const rel of ['main.js', 'sidecar/src/desktop-core.ts']) {
     const source = read(rel);
-    assert.match(source, /\{ id: 'composer-dynamic-island', name: 'dsh-composer-dynamic-island', dir: 'dsh-composer-dynamic-island' \}/, `${rel} 缺 companion 注册`);
+    assert.match(source, /\{ id: 'composer-dynamic-island', name: 'dsh-composer-dynamic-island', dir: 'dsh-composer-dynamic-island', disabled: true \}/, `${rel} 缺默认禁用的 companion 注册`);
+    assert.match(source, /composerIslandDefaultDisabledMigrated/, `${rel} 缺一次性迁移标记`);
+    assert.match(source, /ensurePluginDisabledInPatch/, `${rel} 缺一次性迁移实现`);
     assert.match(source, /'composer-dynamic-island': \{ github: 'says693\/dsh-composer-dynamic-island' \}/, `${rel} 缺更新源`);
     assert.match(source, /'dsh-plugin\.json'/, `${rel} 未复制协议 manifest`);
     assert.match(source, /'README\.zh-CN\.md'/, `${rel} 未复制中文 README`);
@@ -110,10 +116,46 @@ test('copyPluginPackage 将完整运行时包复制进 profile', () => {
   }
 });
 
+test('旧 profile 的灵动岛只迁移禁用一次，用户重新启用后保持', () => {
+  const { createDesktopCore } = require('../desktop-core.js');
+  const { togglePluginInPatch } = require('../scripts/plugin-manager-patch.js');
+  const temp = mkdtempSync(join(tmpdir(), 'dsh-composer-island-migrate-'));
+  try {
+    const home = join(temp, 'home');
+    const userData = join(temp, 'userdata');
+    fs.mkdirSync(join(userData, 'logs'), { recursive: true });
+    const core = createDesktopCore({
+      appRoot: root, userDataDir: userData, logsDir: join(userData, 'logs'), dshHome: home,
+      nodeExe: () => process.execPath, npmCli: () => '',
+    });
+    const profile = join(home, 'profiles', 'web-desktop');
+    fs.mkdirSync(profile, { recursive: true });
+    fs.writeFileSync(join(profile, 'package.json'), JSON.stringify({
+      name: 'dsh-profile-web-desktop', private: true,
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] } },
+    }, null, 2));
+    const patchFile = join(profile, 'cordis.patch.yml');
+    fs.writeFileSync(patchFile, "- insert:\n    - id: composer-dynamic-island\n      name: 'dsh-composer-dynamic-island'\n      config: {}\n");
+    core.syncCompanionPlugins();
+    const disabled = fs.readFileSync(patchFile, 'utf8');
+    assert.match(disabled, /- id: composer-dynamic-island[\s\S]*?disabled: true/);
+    const settings = JSON.parse(fs.readFileSync(join(userData, 'settings.json'), 'utf8'));
+    assert.equal(settings.composerIslandDefaultDisabledMigrated, true);
+
+    const enabled = togglePluginInPatch(disabled, 'composer-dynamic-island', true, 'dsh-composer-dynamic-island');
+    fs.writeFileSync(patchFile, enabled);
+    core.syncCompanionPlugins();
+    assert.doesNotMatch(fs.readFileSync(patchFile, 'utf8'), /disabled: true/);
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+});
+
 test('公开 profile 只写一次 companion 行，不重复加入 bundles', () => {
   const profilePackage = JSON.parse(read('distribution/profile-seed/profiles/web-desktop/package.json'));
   assert.ok(!profilePackage.dsh.profile.bundles.includes(packageJson.name));
   const patch = read('distribution/profile-seed/profiles/web-desktop/cordis.patch.yml');
   assert.equal((patch.match(/^\s*- id: composer-dynamic-island\s*$/gm) || []).length, 1);
   assert.equal((patch.match(/^\s*name: 'dsh-composer-dynamic-island'\s*$/gm) || []).length, 1);
+  assert.match(patch, /^\s*disabled: true\s*$/m);
 });

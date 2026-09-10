@@ -315,8 +315,8 @@ try {
         }
         $profilePatchText = Get-Content -Raw -LiteralPath (Join-Path $isolatedHome 'profiles\web-desktop\cordis.patch.yml')
         $islandPatchRows = [regex]::Matches($profilePatchText, '(?m)^\s*- id: composer-dynamic-island\s*$').Count
-        if ($islandPatchRows -ne 1 -or $profilePatchText -notmatch "(?m)^\s*name: 'dsh-composer-dynamic-island'\s*$") {
-            throw "Composer Dynamic Island profile patch is missing or duplicated (rows=$islandPatchRows)."
+        if ($islandPatchRows -ne 1 -or $profilePatchText -notmatch "(?m)^\s*name: 'dsh-composer-dynamic-island'\s*$" -or $profilePatchText -notmatch "(?m)^\s*disabled: true\s*$") {
+            throw "Composer Dynamic Island profile patch is missing, duplicated, or not default-disabled (rows=$islandPatchRows)."
         }
         $builtinMarker = Get-Content -Raw -LiteralPath (Join-Path $isolatedHome 'profiles\web-desktop\.dsh-builtin-plugins.json') | ConvertFrom-Json
         if ('dsh-composer-dynamic-island' -notin @($builtinMarker.names)) {

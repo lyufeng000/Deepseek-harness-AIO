@@ -130,7 +130,9 @@ test('sidecar: profile 初始化 + 配套插件同步落盘', async () => {
     const patch = fs.readFileSync(path.join(profileDir, 'cordis.patch.yml'), 'utf8');
     assert.match(patch, /id: balance/);
     assert.match(patch, /id: plugin-manager/);
-    assert.match(patch, /id: composer-dynamic-island[\s\S]*?name: 'dsh-composer-dynamic-island'/);
+    assert.match(patch, /id: composer-dynamic-island[\s\S]*?name: 'dsh-composer-dynamic-island'[\s\S]*?disabled: true/);
+    const settings = JSON.parse(fs.readFileSync(path.join(userData, 'settings.json'), 'utf8'));
+    assert.equal(settings.composerIslandDefaultDisabledMigrated, true);
     assert.doesNotMatch(patch, /id: skin-switch|id: dsh-market-plugin|id: ui-skin-|id: offpeak|id: plugin-marketplace/);
     // 内置清单标记已写。
     const marker = JSON.parse(fs.readFileSync(path.join(profileDir, '.dsh-builtin-plugins.json'), 'utf8'));
