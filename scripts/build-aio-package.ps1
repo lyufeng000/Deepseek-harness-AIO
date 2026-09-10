@@ -33,8 +33,10 @@ function Restore-LfOnlyTrackedFiles {
         if (-not (Test-Path -LiteralPath $full -PathType Leaf)) { continue }
         & $git.Source -C $RepoRoot diff --quiet -- $relative
         if ($LASTEXITCODE -eq 0) {
+            $lastWriteUtc = [IO.File]::GetLastWriteTimeUtc($full)
             $normalized = [IO.File]::ReadAllText($full).Replace("`r`n", "`n").Replace("`r", "`n").Replace("`n", "`r`n")
             [IO.File]::WriteAllText($full, $normalized, [Text.UTF8Encoding]::new($false))
+            [IO.File]::SetLastWriteTimeUtc($full, $lastWriteUtc)
         }
     }
 }
@@ -110,6 +112,7 @@ $reviewPath = Join-Path $RepoRoot 'scripts\public-seed-reviewed-content.mjs'
 $oldZodHash = 'b7027e6060924244ba62d33c4bb90527c37b255357e1374cc7a5a16e5b36a3bf'
 $newZodHash = 'a69bdc042c58e8d940e6a5f09ed93646e697af04869a65cf45e9244e950cfb06'
 $reviewBytes = [IO.File]::ReadAllBytes($reviewPath)
+$reviewLastWriteUtc = [IO.File]::GetLastWriteTimeUtc($reviewPath)
 $reviewPatched = $false
 try {
     $reviewText = [Text.Encoding]::UTF8.GetString($reviewBytes)
@@ -140,6 +143,7 @@ try {
 finally {
     if ($reviewPatched) {
         [IO.File]::WriteAllBytes($reviewPath, $reviewBytes)
+        [IO.File]::SetLastWriteTimeUtc($reviewPath, $reviewLastWriteUtc)
     }
 }
 
