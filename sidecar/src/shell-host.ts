@@ -78,7 +78,7 @@ const userDataDir = argOf('user-data', '');
 const logsDir = argOf('logs-dir', '');
 const dshHome = argOf('dsh-home', '');
 const installRoot = argOf('install-root', '');
-const clientVersion = argOf('client-version', '1.2.3');
+const clientVersion = argOf('client-version', '1.3.0');
 let clientUpdater: ClientUpdater | undefined;
 function client(): ClientUpdater {
   if (!clientUpdater) throw new Error('客户端更新尚未初始化。');

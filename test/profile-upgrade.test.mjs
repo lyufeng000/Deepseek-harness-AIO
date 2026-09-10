@@ -66,7 +66,7 @@ test('old-profile plan is version-bound, read-only and startup fails closed', t 
   const before = bytes(root);
   const plan = planProfileUpgrade(app, profile);
   assert.equal(plan.status, 'requires-installer');
-  assert.deepEqual(plan.target, { app: '1.2.3', kernel: '0.1.3-alpha.2' });
+  assert.deepEqual(plan.target, { app: '1.3.0', kernel: '0.1.3-alpha.2' });
   assert.deepEqual(plan.mismatches, ['@deepseek-ai/dsh', '@deepseek-ai/dsh-base']);
   assert.throws(() => assertProfileStartup(app, profile), /PROFILE_UPGRADE_REQUIRED/);
   assert.deepEqual(bytes(root), before);
@@ -128,7 +128,9 @@ test('new, partial, malformed and wrong-app profiles are distinguished conservat
   put(fresh, 'package.json', '{private-fixture-invalid');
   assert.throws(() => assertProfileStartup(app, fresh), error =>
     /UPGRADE_REQUIRED/.test(error.message) && !error.message.includes('private-fixture'));
-  put(app, 'package.json', { version: '1.3.0' });
+  // 这个 fixture 只需要与 UPGRADE_TARGET.app 不同：用永不落版的版本号，
+  // 免得每次提升应用版本都要回来改这一行。
+  put(app, 'package.json', { version: '9.9.9' });
   assert.throws(() => assertProfileStartup(app, path.join(root, 'absent')), /UPGRADE_REQUIRED/);
 });
 

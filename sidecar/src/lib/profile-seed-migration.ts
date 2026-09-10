@@ -30,7 +30,7 @@ import { createRequire } from 'node:module';
 
 const yaml = require('js-yaml');
 const exportsResolver = require('resolve.exports');
-export const MIGRATION_TARGET = Object.freeze({ app: '1.2.3', kernel: '0.1.3-alpha.2' });
+export const MIGRATION_TARGET = Object.freeze({ app: '1.3.0', kernel: '0.1.3-alpha.2' });
 const COMPAT = 'dsh-aio-ui-compat';
 const RENDERER = '@deepseek-ai/dsh-client-ui-renderer';
 const LEGACY_RENDERER = '@deepseek-ai/dsh-client-web-react';
