@@ -59,11 +59,16 @@ jobs:
           $download = Join-Path $env:GITHUB_WORKSPACE 'temp\build-inputs\release'
           $extract = Join-Path $env:GITHUB_WORKSPACE 'temp\build-inputs\extracted'
           New-Item -ItemType Directory -Path $download -Force | Out-Null
-          gh release download $env:BUILD_INPUTS_TAG --repo $env:GITHUB_REPOSITORY --pattern 'DSHEAC-AIO-build-inputs-*.zip' --pattern 'DSHEAC-AIO-build-inputs-*.zip.sha256' --dir $download --clobber
-          $archive = Get-ChildItem -LiteralPath $download -Filter 'DSHEAC-AIO-build-inputs-*.zip' -File | Select-Object -First 1
-          $checksum = Get-ChildItem -LiteralPath $download -Filter 'DSHEAC-AIO-build-inputs-*.zip.sha256' -File | Select-Object -First 1
-          if (-not $archive -or -not $checksum) { throw 'Build-inputs release assets were not downloaded' }
-          & .\scripts\verify-build-inputs.ps1 -Archive $archive.FullName -ChecksumFile $checksum.FullName -ExtractTo $extract
+          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json'; 'User-Agent' = 'DSHEAC-AIO-build' }
+          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/tags/$env:BUILD_INPUTS_TAG" -Headers $headers -TimeoutSec 60
+          $zipAsset = $release.assets | Where-Object { $_.name -like 'DSHEAC-AIO-build-inputs-*.zip' } | Select-Object -First 1
+          $checksumAsset = $release.assets | Where-Object { $_.name -like 'DSHEAC-AIO-build-inputs-*.zip.sha256' } | Select-Object -First 1
+          if (-not $zipAsset -or -not $checksumAsset) { throw 'Build-inputs release assets were not found' }
+          $archive = Join-Path $download $zipAsset.name
+          $checksum = Join-Path $download $checksumAsset.name
+          Invoke-WebRequest -Uri $zipAsset.browser_download_url -OutFile $archive -TimeoutSec 600
+          Invoke-WebRequest -Uri $checksumAsset.browser_download_url -OutFile $checksum -TimeoutSec 60
+          & .\scripts\verify-build-inputs.ps1 -Archive $archive -ChecksumFile $checksum -ExtractTo $extract
           $manifest = Get-Content -LiteralPath (Join-Path $extract 'build-inputs-manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
           $seed = Join-Path $extract $manifest.profileSeed.directory
           Move-Item -LiteralPath (Join-Path $extract 'vendor') -Destination (Join-Path $env:GITHUB_WORKSPACE 'vendor')
@@ -94,11 +99,13 @@ jobs:
 
       - name: Publish application release
         if: ${{ env.RELEASE_TAG != '' }}
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if (-not (gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY 2>$null)) {
-            gh release create $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --title "DSHEAC AIO $env:RELEASE_TAG" --generate-notes
-          }
-          gh release upload $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY dist\*.exe dist\portable\*.zip dist\SHA256SUMS.txt dist\portable\SHA256SUMS.txt --clobber
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: DSHEAC AIO ${{ env.RELEASE_TAG }}
+          generate_release_notes: true
+          files: |
+            dist/*.exe
+            dist/portable/*.zip
+            dist/SHA256SUMS.txt
+            dist/portable/SHA256SUMS.txt

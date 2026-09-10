@@ -15,10 +15,10 @@ test('build-inputs workflow downloads, verifies and builds', () => {
   assert.match(workflow, /Verify Rust toolchain/);
   assert.doesNotMatch(workflow, /dtolnay\/rust-toolchain/);
   assert.match(workflow, /tags:\s*\r?\n\s*- 'v\*'/);
-  assert.match(workflow, /gh release download \$env:BUILD_INPUTS_TAG/);
+  assert.match(workflow, /Invoke-RestMethod -Uri "https:\/\/api\.github\.com\/repos\/\$env:GITHUB_REPOSITORY\/releases\/tags\/\$env:BUILD_INPUTS_TAG"/);
   assert.match(workflow, /verify-build-inputs\.ps1/);
   assert.match(workflow, /build-aio-package\.ps1 -ProfileSeedDir/);
-  assert.match(workflow, /gh release upload/);
+  assert.match(workflow, /softprops\/action-gh-release@v2/);
 });
 
 test('build-inputs scripts expose package and verify paths', () => {
