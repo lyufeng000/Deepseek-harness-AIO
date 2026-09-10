@@ -3,7 +3,7 @@ import path from 'node:path';
 import { isReviewedPublicContent } from './public-seed-reviewed-content.mjs';
 
 const layout = new Map([
-  ['', new Set(['README.md', 'settings.yaml', 'profiles'])],
+  ['', new Set(['AGENTS.md', 'README.md', 'settings.yaml', 'profiles'])],
   ['profiles', new Set(['web-desktop'])],
   ['profiles/web-desktop', new Set(['package.json', 'cordis.yml', 'cordis.patch.yml', 'node_modules'])],
 ]);

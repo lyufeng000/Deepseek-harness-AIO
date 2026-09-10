@@ -350,6 +350,18 @@ try {
         if ($foundPrivateSettings.Count -gt 0) {
             throw "Public installation retained private settings: $($foundPrivateSettings -join ', ')"
         }
+        $seededAgentsDefault = Join-Path $isolatedHome 'AGENTS.md'
+        if (-not (Test-Path -LiteralPath $seededAgentsDefault)) {
+            throw 'User-global AGENTS.md default was not seeded into the first-run home.'
+        }
+        $shippedAgentsDefault = Join-Path $installRoot 'resources\profile-seed\AGENTS.md'
+        if (-not (Test-Path -LiteralPath $shippedAgentsDefault)) {
+            throw 'Installed payload is missing resources\profile-seed\AGENTS.md.'
+        }
+        $seededAgentsSha = Get-Sha256Hex $seededAgentsDefault
+        if ($seededAgentsSha -ne (Get-Sha256Hex $shippedAgentsDefault)) {
+            throw 'First-run home AGENTS.md does not match the shipped seed default byte-for-byte.'
+        }
         $report.profile = [ordered]@{
             requiredPackages = $requiredPackages
             missingPackages = $missingPackages
@@ -360,6 +372,12 @@ try {
             }
             privateSettingsFound = $foundPrivateSettings
             retainedMachineMetadata = $retainedSeedMetadata
+            userGlobalAgentsDefault = [ordered]@{
+                source = 'resources\profile-seed\AGENTS.md'
+                bytes = (Get-Item -LiteralPath $seededAgentsDefault).Length
+                sha256 = $seededAgentsSha
+                matchesShippedSeed = $true
+            }
         }
 
         $stage = 'coexistence'

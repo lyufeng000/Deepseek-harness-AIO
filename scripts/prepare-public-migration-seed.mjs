@@ -15,12 +15,17 @@ const repo = path.resolve(path.dirname(script), '..');
 const require = createRequire(path.join(repo, 'package.json'));
 const yaml = require('js-yaml');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
-const publicConfigs = ['README.md', 'settings.yaml', 'profiles/web-desktop/package.json',
+const publicConfigs = ['README.md', 'settings.yaml', 'AGENTS.md', 'profiles/web-desktop/package.json',
   'profiles/web-desktop/cordis.yml', 'profiles/web-desktop/cordis.patch.yml'];
 const currentProfileConfigs = new Set([
   'profiles/web-desktop/cordis.yml',
   'profiles/web-desktop/cordis.patch.yml',
 ]);
+// Root-level public files introduced by the current review: an older base seed
+// cannot carry them, so they always come from the frozen snapshot. AGENTS.md is
+// the user-global instruction default that reaches $DSH_HOME on first run.
+const currentRootConfigs = new Set(['AGENTS.md']);
+const fromCurrentSource = relative => currentProfileConfigs.has(relative) || currentRootConfigs.has(relative);
 const profileRelative = 'profiles/web-desktop';
 const writeJson = (file, value) => fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, { flag: 'wx' });
 const readJson = file => JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -76,7 +81,8 @@ function publicScan(seed) {
     const bytes = fs.readFileSync(file);
     try {
       inspectSeedArtifact(relative, bytes);
-      if (publicConfigs.includes(relative) && relative !== 'README.md') inspectPublicConfig(yaml.load(bytes.toString('utf8')));
+      // Markdown public defaults (README.md, AGENTS.md) are prose, not YAML.
+      if (publicConfigs.includes(relative) && !/.md$/i.test(relative)) inspectPublicConfig(yaml.load(bytes.toString('utf8')));
     } catch {
       // Paths here are within a proven public tree, never a user's profile.
       throw new Error(`public content validation failed: ${relative}`);
@@ -191,7 +197,7 @@ function sourceBinding() {
   const files = ['package.json', 'package-lock.json', 'sidecar/tsconfig.json',
     'scripts/prepare-public-migration-seed.mjs', 'scripts/sanitize-public-seed.mjs',
     'scripts/public-seed-privacy.mjs', 'scripts/public-seed-reviewed-content.mjs',
-    ...[...currentProfileConfigs].map(relative => `distribution/profile-seed/${relative}`),
+    ...[...currentRootConfigs, ...currentProfileConfigs].map(relative => `distribution/profile-seed/${relative}`),
     ...officialManifests];
   return {
     trees: Object.fromEntries(trees.map(relative => [relative, treeBinding(path.join(repo, relative))])),
@@ -293,11 +299,12 @@ export function buildPublicMigrationSeed({ base, output, work, expectedBaseDiges
   const stage = path.join(work, 'public-seed');
   fs.mkdirSync(path.join(stage, profileRelative), { recursive: true });
   // Root public defaults remain byte-identical to the reviewed base. The profile
-  // manifest and patch files come from the current reviewed source so removed
-  // plugins cannot survive through an older seed. Sync bookkeeping, presets,
-  // guard snapshots and temporary home settings are never published.
+  // manifest, patch files and newly reviewed root defaults (AGENTS.md) come from
+  // the current reviewed source so removed plugins cannot survive through an
+  // older seed, and files the base predates cannot go missing. Sync bookkeeping,
+  // presets, guard snapshots and temporary home settings are never published.
   for (const relative of publicConfigs) {
-    const source = currentProfileConfigs.has(relative)
+    const source = fromCurrentSource(relative)
       ? path.join(frozen, 'distribution/profile-seed', relative)
       : path.join(base, relative);
     fs.copyFileSync(source, path.join(stage, relative), fs.constants.COPYFILE_EXCL);
@@ -309,7 +316,7 @@ export function buildPublicMigrationSeed({ base, output, work, expectedBaseDiges
   commands.push(runNode([path.join(frozen, 'scripts/sanitize-public-seed.mjs'), frozen],
     work, 'sanitize', { ...frozenEnv, DSH_PROFILE_SEED_DIR: stage }));
   for (const relative of publicConfigs) {
-    const expected = currentProfileConfigs.has(relative)
+    const expected = fromCurrentSource(relative)
       ? path.join(frozen, 'distribution/profile-seed', relative)
       : path.join(base, relative);
     if (!fs.readFileSync(expected).equals(fs.readFileSync(path.join(stage, relative)))) {

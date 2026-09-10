@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { inspectSeedTree } from '../scripts/public-seed-privacy.mjs';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const script = path.join(root, 'scripts', 'sanitize-public-seed.mjs');
@@ -237,4 +238,12 @@ test('decoded configuration strings cannot hide user paths using unicode escapes
   const result = f.run();
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /machine-local seed paths found/);
+});
+
+test('tracked public seed ships the user-global AGENTS.md default', () => {
+  const seed = path.join(root, 'distribution', 'profile-seed');
+  const relatives = inspectSeedTree(seed).map(entry => entry.relative);
+  assert.ok(relatives.includes('AGENTS.md'), 'AGENTS.md 必须随 seed 落进 $DSH_HOME');
+  const text = fs.readFileSync(path.join(seed, 'AGENTS.md'), 'utf8');
+  assert.ok(text.trim().length > 0, 'AGENTS.md 不能是空文件');
 });

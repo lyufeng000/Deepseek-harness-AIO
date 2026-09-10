@@ -25,7 +25,10 @@ export const localPackages = Object.freeze({
   'dsh-plugin-wallpaper-engine': ['dsh-plugin-wallpaper-engine-0.6.7.tgz', '0.6.7'],
 });
 const publicFiles = ['README.md', 'settings.yaml', 'profiles/web-desktop/package.json',
-  'profiles/web-desktop/cordis.yml', 'profiles/web-desktop/cordis.patch.yml'];
+  'profiles/web-desktop/cordis.yml', 'profiles/web-desktop/cordis.patch.yml',
+  // Appended at the end: index 2 of this list is the profile manifest consumed
+  // by buildSeed/installedManifest, so new public files must not shift it.
+  'AGENTS.md'];
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const json = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 const writeJson = (file, value) => fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, { flag: 'wx' });
