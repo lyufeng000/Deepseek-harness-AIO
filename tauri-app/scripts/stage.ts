@@ -326,6 +326,13 @@ function main() {
     path.join(RESOURCES, 'profile-seed', 'profiles', 'web-desktop',
       'node_modules', '@dsh-external', 'dsh-webui'),
   ], { stdio: 'inherit' });
+  // 会话区入场动画不残留变换（合成层 / fixed 包含块会让消息区滚动时抽动）。
+  execFileSync(process.execPath, [
+    path.join(REPO_ROOT, 'scripts', 'patch-session-motion.cjs'),
+    '--write',
+    path.join(RESOURCES, 'profile-seed', 'profiles', 'web-desktop',
+      'node_modules', '@dsh-external', 'dsh-webui'),
+  ], { stdio: 'inherit' });
   console.log('[stage] 当前 web-desktop 插件与技能快照完成');
 
   // 2) 生产依赖闭包

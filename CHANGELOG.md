@@ -32,6 +32,16 @@ DeepSeek Harness（dsh）的 Windows 桌面客户端：内置独立 Node 运行�
 - 补丁仍只作用于 staging 的 `resources/profile-seed` 副本，幂等、带稳定锚点与
   “目标缺失/上游改写即跳过”的诊断，不改上游审核快照与构建输入。
 
+### 修复：切换会话后滚动消息区抽动
+- 内置 `@dsh-external/dsh-webui` 的 `session-motion` 入场动画用 `both` 填充，关键帧
+  收尾是 `translateY(0)`：动画播完后单位矩阵永久留在消息区根盒上，该盒成为
+  fixed/absolute 后代的包含块并在滚动容器内单独成层，切换会话后滚动时抽动一下；
+  入场 400ms 内行与滚动端口不再同处一个坐标系，锚点读取最多偏 10px。受控脚本
+  `scripts/patch-session-motion.cjs` 把两条动画改为 `backwards`、收尾改为 `none`，
+  入场观感不变（仍是淡入 + 10px 上浮）。
+- 补丁只作用于 staging 的 `resources/profile-seed` 副本（与顶部胶囊补丁一起重放，
+  失败即中止打包），幂等、带版本与源码指纹校验，未知构建不会被盲目改写。
+
 ## [1.2.3] — 2026-09-10
 
 ### 验证：安装版应用内自动更新
