@@ -1,5 +1,5 @@
 // 内置插件 vs 市场安装的同名包迁移（v4.2）。
-// 忠实移植自仓库根 builtin-collision.js：只动插件层/配置层（package.json /
+// 忠实移植自legacy/electron/builtin-collision.js：只动插件层/配置层（package.json /
 // cordis.patch.yml），保留用户自建 link:/file: 本地链接；内部吞错记日志。
 
 import fs from 'node:fs';

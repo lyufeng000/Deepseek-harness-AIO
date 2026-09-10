@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const balance = require('../balance.js');
+const balance = require('../legacy/electron/balance.js');
 
 // 用固定日期验证 computePricingState 的时段判定与倒计时边界
 // （2026-08-19 是星期三，日期本身不影响，分钟换算即可）。

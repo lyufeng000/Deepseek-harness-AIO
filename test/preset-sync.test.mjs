@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const { syncBundledPresets, ensureDefaultAgentPreset } = require(join(root, 'preset-sync.js'));
+const { syncBundledPresets, ensureDefaultAgentPreset } = require(join(root, 'legacy/electron/preset-sync.js'));
 
 function tmp() {
   return mkdtempSync(join(tmpdir(), 'dsh-preset-sync-'));
@@ -223,7 +223,7 @@ test('每个 preset 目录自包含：引用的 ./ 或 ../_preset 共享件随�
   }
 });
 
-test('electron-builder files 包含 preset-sync.js（否则新模块不进安装包）', () => {
+test('electron-builder files 包含 legacy Electron 模块（否则新模块不进安装包）', () => {
   const yml = readFileSync(join(root, 'electron-builder.yml'), 'utf8');
-  assert.match(yml, /- preset-sync\.js/);
+  assert.match(yml, /- legacy\/electron\/\*\*\/\*\.js/);
 });

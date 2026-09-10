@@ -81,7 +81,7 @@ test('Web adapter 无外传 API，并锁定焦点与卸载生命周期修复', (
 });
 
 test('Electron 与 Tauri sidecar 同步注册插件和 GitHub 更新源', () => {
-  for (const rel of ['main.js', 'sidecar/src/desktop-core.ts']) {
+  for (const rel of ['legacy/electron/main.js', 'sidecar/src/desktop-core.ts']) {
     const source = read(rel);
     assert.match(source, /\{ id: 'composer-dynamic-island', name: 'dsh-composer-dynamic-island', dir: 'dsh-composer-dynamic-island', disabled: true \}/, `${rel} 缺默认禁用的 companion 注册`);
     assert.match(source, /composerIslandDefaultDisabledMigrated/, `${rel} 缺一次性迁移标记`);
@@ -95,7 +95,7 @@ test('Electron 与 Tauri sidecar 同步注册插件和 GitHub 更新源', () => 
 });
 
 test('copyPluginPackage 将完整运行时包复制进 profile', () => {
-  const { createDesktopCore } = require('../desktop-core.js');
+  const { createDesktopCore } = require('../compat/desktop-core.js');
   const temp = mkdtempSync(join(tmpdir(), 'dsh-composer-island-copy-'));
   try {
     const core = createDesktopCore({
@@ -117,7 +117,7 @@ test('copyPluginPackage 将完整运行时包复制进 profile', () => {
 });
 
 test('旧 profile 的灵动岛只迁移禁用一次，用户重新启用后保持', () => {
-  const { createDesktopCore } = require('../desktop-core.js');
+  const { createDesktopCore } = require('../compat/desktop-core.js');
   const { togglePluginInPatch } = require('../scripts/plugin-manager-patch.js');
   const temp = mkdtempSync(join(tmpdir(), 'dsh-composer-island-migrate-'));
   try {

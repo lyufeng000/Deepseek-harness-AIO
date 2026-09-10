@@ -13,7 +13,7 @@ import { createRequire } from 'node:module';
 //     应用后与 repair() 一起重试，绝不无限循环。
 
 const require = createRequire(import.meta.url);
-const { createGuard } = require('../plugin-guard.js');
+const { createGuard } = require('../legacy/electron/plugin-guard.js');
 
 function makeHome(root) {
   const home = join(root, 'dsh-home');

@@ -17,6 +17,7 @@
 const { app, BrowserWindow, Menu, Tray, shell, dialog, Notification, ipcMain, clipboard } = require('electron');
 const { spawn, spawnSync } = require('node:child_process');
 const path = require('node:path');
+const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const fs = require('node:fs');
 const http = require('node:http');
 const net = require('node:net');
@@ -40,7 +41,7 @@ const {
 const { configLinesFor, removeBundledRowDuplicates, collectBundleEntryIds } = require('./patch-row-heal');
 const { syncBundledPresets, ensureDefaultAgentPreset } = require('./preset-sync');
 const { buildErrorDetail } = require('./error-detail');
-const { togglePluginInPatch, ensurePluginDisabledInPatch, removePluginFromPatch, hasEntryId } = require('./scripts/plugin-manager-patch');
+const { togglePluginInPatch, ensurePluginDisabledInPatch, removePluginFromPatch, hasEntryId } = require('../../scripts/plugin-manager-patch');
 const { collectPluginRows } = require('./plugin-manager-state');
 // v4Lite 核心内置插件（壳运行必需）：插件市场/保护中心/启停管理。
 // 其他内置插件可被「插件 → 管理」移除，核心组拒绝移除（原选择向导的
@@ -180,12 +181,12 @@ function log(tag, msg) {
 
 function nodeExe() {
   if (app.isPackaged) return path.join(process.resourcesPath, 'node', 'node.exe');
-  return path.resolve(__dirname, 'vendor', 'node', 'node.exe');
+  return path.resolve(REPO_ROOT, 'vendor', 'node', 'node.exe');
 }
 
 function npmCli() {
   if (app.isPackaged) return path.join(process.resourcesPath, 'npm', 'bin', 'npm-cli.js');
-  return path.resolve(__dirname, 'vendor', 'npm', 'bin', 'npm-cli.js');
+  return path.resolve(REPO_ROOT, 'vendor', 'npm', 'bin', 'npm-cli.js');
 }
 
 // Context shared with the updater module.
@@ -327,7 +328,7 @@ function notifyUncleanRestart(prev) {
     const n = new Notification({
       title: 'Deepseek Harness EAC 已自动恢复',
       body: `检测到应用在 ${when} 前后未正常退出，看门狗已重新启动应用。`,
-      icon: path.join(__dirname, 'assets', 'icon.png'),
+      icon: path.join(REPO_ROOT, 'assets', 'icon.png'),
     });
     n.on('click', () => showMainWindow());
     n.show();
@@ -772,7 +773,7 @@ function applyKoffiPreflight() {
   const ok = runKoffiPreflight({
     spawnSync,
     nodeExe: nodeExe(),
-    script: path.join(__dirname, 'scripts', 'koffi-preflight.cjs'),
+    script: path.join(REPO_ROOT, 'scripts', 'koffi-preflight.cjs'),
     log: preflightLogger,
   });
   if (ok) {
@@ -791,7 +792,7 @@ function applyKoffiPreflightAsync() {
   return runKoffiPreflightAsync({
     spawn,
     nodeExe: nodeExe(),
-    script: path.join(__dirname, 'scripts', 'koffi-preflight.cjs'),
+    script: path.join(REPO_ROOT, 'scripts', 'koffi-preflight.cjs'),
     log: preflightLogger,
   }).then((ok) => {
     if (ok) {
@@ -902,7 +903,7 @@ function createWindow({ startHidden = false } = {}) {
     show: false,
     title: 'Deepseek Harness EAC',
     backgroundColor: '#0b1220',
-    icon: path.join(__dirname, 'assets', 'icon.png'),
+    icon: path.join(REPO_ROOT, 'assets', 'icon.png'),
     // 风格化无边框窗口：去掉原生标题栏/菜单栏，自绘玻璃栏 + Win11 原生圆角。
     ...(IS_WIN ? { frame: false, roundedCorners: true } : {}),
     webPreferences: {
@@ -914,7 +915,7 @@ function createWindow({ startHidden = false } = {}) {
     },
   });
 
-  mainWindow.loadFile(path.join(__dirname, 'assets', 'loading.html'));
+  mainWindow.loadFile(path.join(REPO_ROOT, 'assets', 'loading.html'));
   mainWindow.once('ready-to-show', () => { if (!startHidden) mainWindow.show(); });
   // Keep the app brand in the OS title bar (the web UI sets its own <title>).
   mainWindow.on('page-title-updated', (event) => {
@@ -1014,7 +1015,7 @@ function pluginDirSize(dirName) {
         else if (e.isFile()) total += fs.statSync(full).size;
       }
     };
-    walk(path.join(__dirname, 'assets', 'plugins', dirName));
+    walk(path.join(REPO_ROOT, 'assets', 'plugins', dirName));
   } catch {}
   pluginDirSizeCache.set(dirName, total);
   return total;
@@ -1031,8 +1032,8 @@ function initRendererRecovery() {
     isQuitting: () => quitting,
     isServerAlive: () => !!serverProc && serverProc.exitCode === null && !serverProc.killed,
     getTarget: () => (webUrl ? { kind: 'url', url: webUrl } : null),
-    loadingPage: path.join(__dirname, 'assets', 'loading.html'),
-    recoveryPage: path.join(__dirname, 'assets', 'recovery.html'),
+    loadingPage: path.join(REPO_ROOT, 'assets', 'loading.html'),
+    recoveryPage: path.join(REPO_ROOT, 'assets', 'recovery.html'),
     rebuildMainWindow: ({ startHidden } = {}) => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
       createWindow({ startHidden: !!startHidden });
@@ -1053,7 +1054,7 @@ function initRendererRecovery() {
         const n = new Notification({
           title,
           body,
-          icon: path.join(__dirname, 'assets', 'icon.png'),
+          icon: path.join(REPO_ROOT, 'assets', 'icon.png'),
         });
         n.on('click', () => showMainWindow());
         n.show();
@@ -1138,7 +1139,7 @@ function notifyPluginUpdates(updatable) {
     const n = new Notification({
       title: '有 ' + updatable.length + ' 个内置插件可更新',
       body: names + (updatable.length > 5 ? ' 等' : '') + ' 已发布新版本。打开「设置 → 插件 → 更新」查看并更新（自动更新默认关闭，仅提示）。',
-      icon: path.join(__dirname, 'assets', 'icon.png'),
+      icon: path.join(REPO_ROOT, 'assets', 'icon.png'),
     });
     n.on('click', () => showMainWindow());
     n.show();
@@ -1300,7 +1301,7 @@ function registerChromeIpc() {
     if (!mainWindow || event.sender !== mainWindow.webContents) return null;
     let iconDataUri = '';
     try {
-      const buf = fs.readFileSync(path.join(__dirname, 'assets', 'icon.png'));
+      const buf = fs.readFileSync(path.join(REPO_ROOT, 'assets', 'icon.png'));
       if (buf.length > 0 && buf[0] === 0x89 && buf[1] === 0x50) {
         iconDataUri = 'data:image/png;base64,' + buf.toString('base64');
       }
@@ -1667,7 +1668,7 @@ function showMainWindow() {
 function createTray() {
   if (!IS_WIN) return;
   try {
-    const iconPath = path.join(__dirname, 'assets', 'tray-icon.png');
+    const iconPath = path.join(REPO_ROOT, 'assets', 'tray-icon.png');
     if (!fs.existsSync(iconPath)) return;
     tray = new Tray(iconPath);
     tray.setToolTip('Deepseek Harness EAC v4Lite');
@@ -1767,7 +1768,7 @@ function pluginUpdateSources() {
     if (!update) continue;
     if (removed.has(p.id)) continue;
     const dirName = p.dir || (p.name.includes('/') ? p.name.split('/').pop() : p.name);
-    const assetsDir = path.join(__dirname, 'assets', 'plugins', dirName);
+    const assetsDir = path.join(REPO_ROOT, 'assets', 'plugins', dirName);
     if (!fs.existsSync(path.join(assetsDir, 'package.json'))) continue;
     out.push({ id: p.id, name: p.name, assetsDir, update });
   }
@@ -1776,7 +1777,7 @@ function pluginUpdateSources() {
 
 /** 内置插件当前生效的源目录：覆盖层（已更新版本）优先，资产版本回退。 */
 function builtinPluginSourceDir(dirName) {
-  const assets = path.join(__dirname, 'assets', 'plugins', dirName);
+  const assets = path.join(REPO_ROOT, 'assets', 'plugins', dirName);
   const overlay = path.join(userDataDir, 'builtin-plugin-updates', dirName);
   if (!fs.existsSync(path.join(overlay, 'package.json'))) return assets;
   if (!fs.existsSync(path.join(assets, 'package.json'))) return overlay;
@@ -1911,7 +1912,7 @@ function healProfileModules() {
 }
 
 // pnpm allowBuilds 自动放行（守护启动失败链使用）。
-const ALLOW_BUILDS_MODULE = path.join(__dirname, 'assets', 'runtime', 'plugin-install', 'allow-builds.mjs');
+const ALLOW_BUILDS_MODULE = path.join(REPO_ROOT, 'assets', 'runtime', 'plugin-install', 'allow-builds.mjs');
 let allowBuildsMod = null;
 
 async function allowBuilds() {
@@ -1970,7 +1971,7 @@ function pluginManagerPackageDescription(name) {
   if (!name) return '';
   const candidates = [
     path.join(desktopProfileDir(), 'node_modules', ...name.split('/')),
-    path.join(__dirname, 'assets', 'plugins', name.includes('/') ? name.slice(name.indexOf('/') + 1) : name),
+    path.join(REPO_ROOT, 'assets', 'plugins', name.includes('/') ? name.slice(name.indexOf('/') + 1) : name),
   ];
   for (const dir of candidates) {
     try {
@@ -2144,7 +2145,7 @@ function syncCompanionPlugins() {
     // preset 不进插件树，坏 preset 不会拖垮启动；已存在则跳过（用户手装
     // 或改过的版本优先），见 preset-sync.js。
     const presetsSynced = syncBundledPresets(
-      path.join(__dirname, 'assets', 'agent-presets'),
+      path.join(REPO_ROOT, 'assets', 'agent-presets'),
       path.join(home, '.agent-presets'),
       (m) => log('boot', m)
     );
@@ -2213,7 +2214,7 @@ function syncCompanionPlugins() {
         const n = new Notification({
           title: '内置插件已接管同名市场包',
           body: `检测到市场安装的重复包，已改用内置版本（${names}）。插件树已自动整理，本次启动生效。`,
-          icon: path.join(__dirname, 'assets', 'icon.png'),
+          icon: path.join(REPO_ROOT, 'assets', 'icon.png'),
         });
         n.on('click', () => showMainWindow());
         n.show();
@@ -2313,7 +2314,7 @@ function shortcutIconPath() {
   // 复制到 userData 保证路径稳定（便携版 exe 解压目录每次启动都会变）。
   const ico = path.join(userDataDir, 'icon.ico');
   try {
-    const src = path.join(__dirname, 'assets', 'icon.ico');
+    const src = path.join(REPO_ROOT, 'assets', 'icon.ico');
     if (!fs.existsSync(src)) return '';
     if (!fs.existsSync(ico) || fs.statSync(src).size !== fs.statSync(ico).size) {
       fs.copyFileSync(src, ico);
@@ -2321,7 +2322,7 @@ function shortcutIconPath() {
     return ico;
   } catch (err) {
     log('boot', '复制快捷方式图标失败: ' + err.message);
-    return path.join(__dirname, 'assets', 'icon.ico');
+    return path.join(REPO_ROOT, 'assets', 'icon.ico');
   }
 }
 
@@ -2469,7 +2470,7 @@ function startJunctionWatchdog() {
           const n = new Notification({
             title: '已自动修复共享模块指向',
             body: '检测到原生 dsh 改写了共享模块目录，桌面端已恢复指向自身版本。原生 CLI 如有异常，重启它即可。',
-            icon: path.join(__dirname, 'assets', 'icon.png'),
+            icon: path.join(REPO_ROOT, 'assets', 'icon.png'),
           });
           n.on('click', () => showMainWindow());
           n.show();

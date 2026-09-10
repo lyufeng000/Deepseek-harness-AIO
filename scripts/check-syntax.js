@@ -13,19 +13,19 @@ const { spawnSync } = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
 const entryFiles = [
-  'main.js',
-  'preload.js',
-  'updater.js',
-  'renderer-recovery.js',
-  'watchdog.js',
-  'stable-port.js',
-  'koffi-preflight.js',
-  'profile-module-heal.js',
-  'patch-row-heal.js',
-  'plugin-guard.js',
-  'plugin-manager-state.js',
-  'plugin-updater.js',
-  'preset-sync.js',
+  'legacy/electron/main.js',
+  'legacy/electron/preload.js',
+  'legacy/electron/updater.js',
+  'legacy/electron/renderer-recovery.js',
+  'legacy/electron/watchdog.js',
+  'legacy/electron/stable-port.js',
+  'legacy/electron/koffi-preflight.js',
+  'legacy/electron/profile-module-heal.js',
+  'legacy/electron/patch-row-heal.js',
+  'legacy/electron/plugin-guard.js',
+  'legacy/electron/plugin-manager-state.js',
+  'legacy/electron/plugin-updater.js',
+  'legacy/electron/preset-sync.js',
 ];
 
 // 匹配「async/await 关键字与紧随其后的 function 声明之间被空行/注释行拆开」：

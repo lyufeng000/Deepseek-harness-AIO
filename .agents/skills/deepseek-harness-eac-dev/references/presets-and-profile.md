@@ -35,10 +35,10 @@
 ## 关键实现
 
 - Profile 解析与初始化：`lib/desktop/profile.ts`
-- 内置 preset 同步：`preset-sync.js`
+- 内置 preset 同步：`legacy/electron/preset-sync.js`
 - 压缩 preset 迁移：`compact-preset-migrate.js`
 - Patch 行读写：`scripts/plugin-manager-patch.js`
-- Patch config 修复：`patch-row-heal.js`
+- Patch config 修复：`legacy/electron/patch-row-heal.js`
 - 旧共享 web profile 迁移：`shortcuts.ts::migrateFromSharedWebProfile`
 - 内置 Skill 同步：`market.ts::syncBundledSkills`
 

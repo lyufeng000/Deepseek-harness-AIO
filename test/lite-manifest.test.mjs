@@ -102,8 +102,8 @@ test('插件：核心组（CORE_PLUGIN_IDS）为 v4Lite 清单，选择向导已
 });
 
 test('壳层：main.js / preload.js 无已移除功能的残留引用', () => {
-  const main = read('main.js');
-  const preload = read('preload.js');
+  const main = read('legacy/electron/main.js');
+  const preload = read('legacy/electron/preload.js');
   for (const token of FORBIDDEN_TOKENS) {
     assert.ok(!main.includes(token), 'main.js 仍含 ' + token);
     assert.ok(!preload.includes(token), 'preload.js 仍含 ' + token);
@@ -134,6 +134,7 @@ test('打包：electron-builder.yml 仅 Windows x64、不再打包已移除模�
   const yml = read('electron-builder.yml');
   assert.ok(!yml.includes('client-updater.js'));
   assert.ok(!yml.includes('session-watcher.js'));
+  assert.ok(yml.includes('legacy/electron/**/*.js'));
   assert.ok(yml.includes('productName: DSHEAC AIO'));
   assert.ok(yml.includes('appId: com.deepseek.dsh.desktop.aio'));
   assert.ok(yml.includes('artifactName: DSHEAC-AIO-v1-Setup-${arch}.${ext}'));
@@ -169,10 +170,11 @@ test('打包：package.json 使用 AIO v1 发布标识、无客户端自更新�
 
 test('保留：核心壳层模块齐全', () => {
   for (const rel of [
-    'balance.js', 'updater.js', 'plugin-updater.js', 'plugin-guard.js', 'profile-module-heal.js',
-    'builtin-collision.js', 'plugin-manager-state.js', 'patch-row-heal.js',
-    'preset-sync.js', 'error-detail.js', 'bundle-integrity.js', 'stable-port.js',
-    'koffi-preflight.js', 'renderer-recovery.js', 'watchdog.js',
+    'legacy/electron/main.js', 'legacy/electron/preload.js',
+    'legacy/electron/balance.js', 'legacy/electron/updater.js', 'legacy/electron/plugin-updater.js', 'legacy/electron/plugin-guard.js', 'legacy/electron/profile-module-heal.js',
+    'legacy/electron/builtin-collision.js', 'legacy/electron/plugin-manager-state.js', 'legacy/electron/patch-row-heal.js',
+    'legacy/electron/preset-sync.js', 'legacy/electron/error-detail.js', 'legacy/electron/bundle-integrity.js', 'legacy/electron/stable-port.js',
+    'legacy/electron/koffi-preflight.js', 'legacy/electron/renderer-recovery.js', 'legacy/electron/watchdog.js',
   ]) {
     assert.ok(existsSync(join(root, rel)), rel + ' 缺失');
   }

@@ -13,7 +13,7 @@ const {
   CHROMIUM_RESTRICTED_PORTS,
   restrictedPortOf,
   chooseStableWebPort,
-} = require(join(root, 'stable-port.js'));
+} = require(join(root, 'legacy/electron/stable-port.js'));
 
 // --- CHROMIUM_RESTRICTED_PORTS ----------------------------------------------
 

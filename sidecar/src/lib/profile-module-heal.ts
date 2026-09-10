@@ -1,5 +1,5 @@
 // Profile node_modules shadowing heal.
-// 忠实移植自仓库根 profile-module-heal.js（背景见原文件头注释）：
+// 忠实移植自legacy/electron/profile-module-heal.js（背景见原文件头注释）：
 // 移除 profile node_modules 中遮蔽 fallback junction 的真实目录拷贝与
 // profile 内部 .pnpm 链接，让模块解析回落到唯一实例；无 fallback 对应的
 // 本地包与指向外部 store 的 link: 开发链接不动。返回被移除的包名。

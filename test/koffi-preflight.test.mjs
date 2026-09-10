@@ -15,7 +15,7 @@ const {
   PICKER_BROWSE_OVERLAY_MARKER,
   enablePickerBrowseOverlay,
   clearAutoPickerBrowseOverlay,
-} = require(join(root, 'koffi-preflight.js'));
+} = require(join(root, 'legacy/electron/koffi-preflight.js'));
 
 function tmp() {
   return mkdtempSync(join(tmpdir(), 'dsh-koffi-'));

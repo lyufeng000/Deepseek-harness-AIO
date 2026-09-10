@@ -1,5 +1,5 @@
 // shell-host.ts — Tauri 壳的 Node sidecar 入口（stdio 行式 JSON-RPC 服务）。
-// 忠实移植自仓库根 shell-host.js。
+// 忠实移植自compat/shell-host.js。
 //
 // 协议：
 //   请求  {"id":N,"method":"ns.fn","params":{...}}

@@ -6,7 +6,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildErrorDetail } from '../error-detail.js';
+import { buildErrorDetail } from '../legacy/electron/error-detail.js';
 
 test('buildErrorDetail includes message, stack and log directory', () => {
   const err = new Error('boom');

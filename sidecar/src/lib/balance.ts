@@ -1,5 +1,5 @@
 // DeepSeek 账户余额查询（sidecar 模块，供对话统计栏小部件 / chrome 菜单使用）。
-// 忠实移植自仓库根 balance.js。
+// 忠实移植自legacy/electron/balance.js。
 //
 // 密钥来源：环境变量 DEEPSEEK_API_KEY > DSH_HOME/.credentials.yaml。
 // 端点：https://api.deepseek.com/user/balance；可用环境变量覆盖：

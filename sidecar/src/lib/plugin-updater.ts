@@ -1,5 +1,5 @@
-// plugin-updater.js — 内置插件上游更新引擎。
-// 忠实移植自仓库根 plugin-updater.js（安全设计与覆盖层规则见原文件头注释）：
+// legacy/electron/plugin-updater.js — 内置插件上游更新引擎。
+// 忠实移植自legacy/electron/plugin-updater.js（安全设计与覆盖层规则见原文件头注释）：
 //   · checkPluginUpdates(ctx, sources)   —— 静默检测（镜像链+TTL+24h 节流）
 //   · applyBuiltinPluginUpdate(ctx, ...) —— 下载到覆盖层并尽力拷入 profile
 //   · autoApplyUpdates(ctx, sources)     —— 自动更新流程（默认关闭）

@@ -24,26 +24,10 @@ npmRebuild: false
 buildDependenciesFromSource: false
 
 files:
-  - main.js
-  - balance.js
-  - updater.js
-  - plugin-updater.js
-  - profile-module-heal.js
-  - patch-row-heal.js
-  - builtin-collision.js
-  - plugin-manager-state.js
-  - plugin-guard.js
-  - preset-sync.js
-  - error-detail.js
-  - bundle-integrity.js
-  - stable-port.js
-  - koffi-preflight.js
-  - renderer-recovery.js
-  - watchdog.js
-  - preload.js
+  - legacy/electron/**/*.js
   - assets/**/*
   # 运行时脚本：koffi 预检探针（scripts/koffi-preflight.cjs）与
-  # 插件启停手术脚本（main.js 启动时 require）等必须在成品里存在。
+  # 插件启停手术脚本（legacy/electron/main.js 启动时 require）等必须在成品里存在。
   - scripts/koffi-preflight.cjs
   - scripts/plugin-manager-patch.js
   - scripts/make-release-hashes.js
@@ -76,7 +60,7 @@ nsis:
   allowToChangeInstallationDirectory: true
   # V4：always 会在每次升级（含自动更新拉起的静默安装）时无条件重建桌面
   # 快捷方式，与用户自定义/改名/换图标的快捷方式并存成两个。改为 true
-  # （尊重安装向导勾选项）；运行时维护见 main.js maintainShortcuts。
+  # （尊重安装向导勾选项）；运行时维护见 legacy/electron/main.js maintainShortcuts。
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: DSHEAC AIO

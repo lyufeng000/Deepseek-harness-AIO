@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const preload = readFileSync(join(root, 'preload.js'), 'utf8');
+const preload = readFileSync(join(root, 'legacy/electron/preload.js'), 'utf8');
 
 test('preload declares its titlebar height on <html> for client plugins', () => {
   // BAR_HEIGHT 与声明的属性值必须同源（同一常量插值），不能硬编码两份

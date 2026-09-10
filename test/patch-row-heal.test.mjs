@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const { configLinesFor, normalizeRowConfigIndent, removeBundledRowDuplicates, bundlePatchEntryIds, collectBundleEntryIds } = require(join(root, 'patch-row-heal.js'));
+const { configLinesFor, normalizeRowConfigIndent, removeBundledRowDuplicates, bundlePatchEntryIds, collectBundleEntryIds } = require(join(root, 'legacy/electron/patch-row-heal.js'));
 
 test('configLinesFor 生成合法 patch YAML', () => {
   assert.equal(configLinesFor({ path: 'soul.md' }), '      config:\n        path: "soul.md"\n');

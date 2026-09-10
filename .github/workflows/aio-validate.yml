@@ -11,6 +11,8 @@ on:
       - 'sidecar/**'
       - 'tauri-app/**'
       - 'tauri-shell/**'
+      - 'legacy/**'
+      - 'compat/**'
       - 'scripts/**'
       - 'test/**'
       - '*.js'

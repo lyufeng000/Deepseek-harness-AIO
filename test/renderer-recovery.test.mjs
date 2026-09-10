@@ -11,7 +11,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { RendererRecovery, computeBackoff, nextAction, DEFAULT_OPTS } from '../renderer-recovery.js';
+import { RendererRecovery, computeBackoff, nextAction, DEFAULT_OPTS } from '../legacy/electron/renderer-recovery.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

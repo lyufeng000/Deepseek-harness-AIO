@@ -67,7 +67,7 @@
         @{
             Name = 'aio-balance-pricing'
             Domain = 'product-services'
-            Pattern = '^balance\.js$|^assets/plugins/dsh-balance/'
+            Pattern = '^legacy/electron/balance\.js$|^assets/plugins/dsh-balance/'
             Reference = 'references/product-services.md'
             Level = 'full'
             Tests = @('test/balance-pricing.test.mjs')
@@ -103,7 +103,7 @@
         @{
             Name = 'aio-electron-fallback'
             Domain = 'sidecar-bridge'
-            Pattern = '^(main|preload|desktop-core)\.js$'
+            Pattern = '^legacy/electron/(main|preload)\.js$|^compat/desktop-core\.js$'
             Reference = 'references/sidecar-and-bridge.md'
             Level = 'runtime'
             Tests = @('test/bundled-files.test.mjs', 'test/recovery-integration.test.mjs')

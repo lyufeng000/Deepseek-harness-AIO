@@ -17,7 +17,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(fileURLToPath(import.meta.url), '..', '..');
-const WATCHDOG = join(ROOT, 'watchdog.js');
+const WATCHDOG = join(ROOT, 'legacy/electron/watchdog.js');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function tmp() { return mkdtempSync(join(tmpdir(), 'dsh-watchdog-')); }

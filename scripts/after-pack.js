@@ -9,7 +9,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { buildBundleManifest } = require('../bundle-integrity.js');
+const { buildBundleManifest } = require('../legacy/electron/bundle-integrity.js');
 
 module.exports = async function afterPack(context) {
   const { appOutDir, electronPlatformName } = context;

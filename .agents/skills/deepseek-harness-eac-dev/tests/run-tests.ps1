@@ -218,7 +218,7 @@ Assert-Fixture -Name 'verify-files-json' -Condition (
     @($verify.data.classification.files).Count -eq 2
 ) -Failure ($verify.raw)
 
-$levelFloorFile = if ($isAioLayout) { 'balance.js' } else { 'dsh-desktop/lib/desktop/balance.ts' }
+$levelFloorFile = if ($isAioLayout) { 'legacy/electron/balance.js' } else { 'dsh-desktop/lib/desktop/balance.ts' }
 $levelFloor = Invoke-JsonFixture -Script 'verify-change.ps1' -Arguments @(
     '-RepoPath', $repoRoot,
     '-Level', 'targeted',

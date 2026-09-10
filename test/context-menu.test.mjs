@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const main = readFileSync(join(root, 'main.js'), 'utf8');
+const main = readFileSync(join(root, 'legacy/electron/main.js'), 'utf8');
 
 test('attachEditContextMenu 定义完整：编辑/图片/选区/导航四类场景', () => {
   const i = main.indexOf('function attachEditContextMenu');

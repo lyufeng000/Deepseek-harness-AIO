@@ -9,8 +9,8 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import * as updater from '../updater.js';
-import * as pu from '../plugin-updater.js';
+import * as updater from '../legacy/electron/updater.js';
+import * as pu from '../legacy/electron/plugin-updater.js';
 
 function tmpCtx(t) {
   const userDataDir = mkdtempSync(join(tmpdir(), 'dsh-plugup-'));

@@ -10,8 +10,8 @@ import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 
 const ROOT = join(fileURLToPath(import.meta.url), '..', '..');
-const mainSrc = readFileSync(join(ROOT, 'main.js'), 'utf8');
-const preloadSrc = readFileSync(join(ROOT, 'preload.js'), 'utf8');
+const mainSrc = readFileSync(join(ROOT, 'legacy/electron/main.js'), 'utf8');
+const preloadSrc = readFileSync(join(ROOT, 'legacy/electron/preload.js'), 'utf8');
 
 test('main.js requires the renderer-recovery module', () => {
   assert.ok(/require\('\.\/renderer-recovery'\)/.test(mainSrc), "main.js must require('./renderer-recovery')");

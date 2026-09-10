@@ -34,7 +34,7 @@ test('AIO remains isolated from every legacy product by default', () => {
   const paths = read('tauri-app/src/paths.rs');
   const migrate = read('tauri-app/src/ve_migrate.rs');
   const nsh = read('tauri-app/nsis/installer-hooks.nsh');
-  const electron = read('main.js');
+  const electron = read('legacy/electron/main.js');
   const shortcuts = read('tauri-app/src/shortcuts.rs');
   assert.equal(conf.identifier, 'com.deepseek.dsh.desktop.aio');
   assert.match(paths, /user_data\.join\("dsh-home"\)/);
@@ -50,6 +50,7 @@ test('AIO remains isolated from every legacy product by default', () => {
 
 test('AIO has one default Tauri release entrypoint', () => {
   const pkg = JSON.parse(read('package.json'));
+  assert.equal(pkg.main, 'legacy/electron/main.js');
   assert.match(pkg.scripts.start, /tauri-app/);
   assert.match(pkg.scripts.pack, /tauri-app/);
   assert.match(pkg.scripts.dist, /build-aio-release\.ps1/);

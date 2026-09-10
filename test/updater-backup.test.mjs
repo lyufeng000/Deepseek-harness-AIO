@@ -17,7 +17,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const { confirmPreviousAgentHealthy, previousAgentInfo, rollbackToPrevious } =
-  await import(new URL('../updater.js', import.meta.url));
+  await import(new URL('../legacy/electron/updater.js', import.meta.url));
 
 function makeCtx() {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'updater-backup-'));

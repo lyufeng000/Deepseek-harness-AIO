@@ -1,4 +1,4 @@
-// 忠实移植自 patch-row-heal.js
+// 忠实移植自 legacy/electron/patch-row-heal.js
 // cordis.patch.yml row maintenance helpers.
 //
 // The sync pass writes companion-plugin rows into the profile patch and must

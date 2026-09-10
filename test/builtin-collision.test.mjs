@@ -12,7 +12,7 @@ import { createRequire } from 'node:module';
 // 移除（保留用户自建 link: 本地链接），让内置版干净接管，并报告移除了什么。
 
 const require = createRequire(import.meta.url);
-const { removeMarketDuplicate } = require('../builtin-collision.js');
+const { removeMarketDuplicate } = require('../legacy/electron/builtin-collision.js');
 
 const PATCH_TPL = [
   '- id: dsh-better-sidebar',

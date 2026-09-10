@@ -1,7 +1,7 @@
 // 插件管理状态合并（v4.2）：把 profile cordis.patch.yml 解析出的 entries
 // 合并成管理页 / 桌宠设置可消费的行列表。纯函数，不碰磁盘。
 //
-// 忠实移植自仓库根 plugin-manager-state.js（语义要点见原文件头注释）：
+// 忠实移植自legacy/electron/plugin-manager-state.js（语义要点见原文件头注释）：
 //  · 顶层 `- id: x` 条目与 `- insert:` 内层条目都算登记点；
 //  · 任一登记点带 disabled: true 即视为禁用；
 //  · hasConfig 只读顶层条目。

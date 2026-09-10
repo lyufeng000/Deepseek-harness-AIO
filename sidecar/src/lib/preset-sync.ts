@@ -1,5 +1,5 @@
 // Bundled agent-preset sync.
-// 忠实移植自仓库根 preset-sync.js：assets/agent-presets 内置 preset 装入
+// 忠实移植自legacy/electron/preset-sync.js：assets/agent-presets 内置 preset 装入
 // 用户 preset 根；skip-if-exists（用户编辑与手动安装永远优先）。
 // ensureDefaultAgentPreset 做保守的文本级 YAML 编辑，绝不破坏 settings.yaml。
 

@@ -15,7 +15,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
-import { buildBundleManifest, verifyBundle } from '../bundle-integrity.js';
+import { buildBundleManifest, verifyBundle } from '../legacy/electron/bundle-integrity.js';
 
 /** commander(3 files) + @deepseek-ai/dsh(2) + @img/sharp-win32-x64(2 incl. .node) */
 function makeTree() {

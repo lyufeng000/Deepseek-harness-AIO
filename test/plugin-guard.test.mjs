@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createGuard } from '../plugin-guard.js';
+import { createGuard } from '../legacy/electron/plugin-guard.js';
 
 /** Build a fake DSH home with an installation closure + desktop profile. */
 function makeHome(t) {

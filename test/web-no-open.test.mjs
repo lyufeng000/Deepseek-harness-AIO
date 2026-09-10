@@ -11,7 +11,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 // 否则每次启动多弹一个浏览器窗口（行为回归）。
 
 test('Electron 壳启动 dsh web 显式传 --no-open（rc.2 默认开浏览器）', () => {
-  const src = readFileSync(join(root, 'main.js'), 'utf8');
+  const src = readFileSync(join(root, 'legacy/electron/main.js'), 'utf8');
   assert.match(
     src,
     /'--port', String\(webPort\), '--no-open'/,

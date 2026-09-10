@@ -20,7 +20,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, lstatSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { healProfileModuleShadowing } from '../profile-module-heal.js';
+import { healProfileModuleShadowing } from '../legacy/electron/profile-module-heal.js';
 
 /** Build a fake DSH home: fallback junctions + a web profile node_modules. */
 function makeHome() {

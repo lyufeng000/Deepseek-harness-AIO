@@ -3,7 +3,7 @@
   "productName": "DSHEAC AIO",
   "version": "1.2.0",
   "description": "DSHEAC AIO v1（All-in-One）：整合 dsh CLI、Node 运行时、插件与技能快照的 Windows x64 发行版。",
-  "main": "main.js",
+  "main": "legacy/electron/main.js",
   "author": "DSH Desktop",
   "license": "MIT",
   "private": true,

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const { collectPluginRows } = require(join(root, 'plugin-manager-state.js'));
+const { collectPluginRows } = require(join(root, 'legacy/electron/plugin-manager-state.js'));
 
 // 与 main.js COMPANION_PLUGINS 同构的最小清单（含默认禁用的大肥鱼）。
 const companion = [

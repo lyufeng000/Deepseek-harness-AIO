@@ -1,5 +1,5 @@
 // desktop-core.ts — Tauri 壳的 sidecar 业务编排层。
-// 忠实移植自仓库根 desktop-core.js（Electron main.js「插件生态 + 配套资产」
+// 忠实移植自compat/desktop-core.js（legacy/electron/main.js「插件生态 + 配套资产」
 // 编排逻辑的整体迁出，行为与 main.js 逐一对齐；副作用经 ctx 注入）。
 //
 // 设计约束：

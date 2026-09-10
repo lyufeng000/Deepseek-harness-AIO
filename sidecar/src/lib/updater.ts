@@ -1,5 +1,5 @@
 // Self-update engine for the bundled @deepseek-ai/dsh agent.
-// 忠实移植自仓库根 updater.js（流程与镜像源链设计见原文件头注释）。
+// 忠实移植自legacy/electron/updater.js（流程与镜像源链设计见原文件头注释）。
 //
 // The overlay lives in the user-writable data dir, so updates work for the
 // NSIS install AND the portable build (whose unpacked resources are

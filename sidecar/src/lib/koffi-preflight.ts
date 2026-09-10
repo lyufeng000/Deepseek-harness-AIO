@@ -1,5 +1,5 @@
 // koffi FFI 预检与目录选择器降级（integrated from upstream dsh_desktop）。
-// 忠实移植自仓库根 koffi-preflight.js：本模块只做纯逻辑与文件管理，
+// 忠实移植自legacy/electron/koffi-preflight.js：本模块只做纯逻辑与文件管理，
 // 进程/文件系统依赖全部注入（DI），便于单元测试。
 
 import fs from 'node:fs';
