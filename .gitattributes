@@ -1,1 +1,5 @@
 assets/plugins/dsh-composer-dynamic-island/lib/client.js text eol=lf
+assets/plugins/dsh-aio-ui-compat/lib/client.js text eol=lf
+assets/plugins/dsh-aio-ui-compat/PROVENANCE.json text eol=lf
+assets/plugins/dsh-aio-ui-compat/LICENSE text eol=lf
+tauri-app/src/inject/chrome.js text eol=lf

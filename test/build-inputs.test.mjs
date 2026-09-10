@@ -14,8 +14,16 @@ test('build-inputs workflow downloads, verifies and builds', () => {
   assert.match(workflow, /working-directory: a/);
   assert.match(workflow, /path: a/);
   assert.match(workflow, /a\/dist\/\*\.exe/);
-  assert.match(workflow, /Prepare clean build-input directories/);
   assert.match(workflow, /Verify Rust toolchain/);
+  // Build inputs are reused only after an identity+SHA-256 check; there is no
+  // unconditional delete-and-re-download step.
+  assert.match(workflow, /Get-Sha256Hex/);
+  assert.match(workflow, /Reusing verified build inputs/);
+  assert.match(workflow, /Build-inputs asset digest is unavailable/);
+  assert.match(workflow, /Copy-Item -LiteralPath \$sourceVendor/);
+  // A shared self-hosted runner must serialize builds and keep Cargo warm.
+  assert.match(workflow, /concurrency:/);
+  assert.match(workflow, /Swatinem\/rust-cache@v2/);
   assert.doesNotMatch(workflow, /dtolnay\/rust-toolchain/);
   assert.match(workflow, /tags:\s*\r?\n\s*- 'v\*'/);
   assert.match(workflow, /Invoke-RestMethod -Uri "https:\/\/api\.github\.com\/repos\/\$env:GITHUB_REPOSITORY\/releases\/tags\/\$env:BUILD_INPUTS_TAG"/);

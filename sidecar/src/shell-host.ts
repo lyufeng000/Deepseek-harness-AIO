@@ -14,6 +14,8 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { createDesktopCore } from './desktop-core';
 import type { UpdaterCtx } from './lib/updater';
+import { ClientUpdater } from './lib/client-update';
+import { prepareTransaction } from './lib/update-transaction';
 
 /// desktop-core 装配结果的最小结构面（完整类型由 desktop-core 模块承载）。
 export interface DesktopCoreLike {
@@ -75,6 +77,13 @@ const appRoot = argOf('app-root', __dirname);
 const userDataDir = argOf('user-data', '');
 const logsDir = argOf('logs-dir', '');
 const dshHome = argOf('dsh-home', '');
+const installRoot = argOf('install-root', '');
+const clientVersion = argOf('client-version', '1.2.0');
+let clientUpdater: ClientUpdater | undefined;
+function client(): ClientUpdater {
+  if (!clientUpdater) throw new Error('客户端更新尚未初始化。');
+  return clientUpdater;
+}
 
 if (!userDataDir || !logsDir || !dshHome) {
   process.stderr.write('[shell-host] missing required args: user-data/logs-dir/dsh-home\n');
@@ -129,6 +138,24 @@ async function refreshBalanceAndEmit(): Promise<unknown> {
 
 // 方法表：ns.fn → handler(params)。全部 async 化以便统一错误处理。
 const METHODS: Record<string, RpcHandler> = {
+  'clientUpdate.init': ({ downloads } = {}) => {
+    if (!installRoot || !path.isAbsolute(downloads)) throw new Error('客户端更新目录不可用。');
+    clientUpdater ||= new ClientUpdater({ version: clientVersion, edition: fs.existsSync(path.join(installRoot, '.dsh-portable')) ? 'portable' : 'installer', userData: userDataDir, downloads });
+    return client().status();
+  },
+  'clientUpdate.check': ({ manual } = {}) => client().check(manual === true),
+  'clientUpdate.status': () => client().status(),
+  'clientUpdate.download': () => client().startDownload(),
+  'clientUpdate.cancel': () => client().cancel(),
+  'clientUpdate.notifications': ({ enabled } = {}) => client().notifications(enabled),
+  'clientUpdate.reset': ({ error } = {}) => client().reset(typeof error === 'string' ? error : undefined),
+  'clientUpdate.prepare': async ({ parentPid } = {}) => {
+    if (!Number.isSafeInteger(parentPid) || parentPid <= 0) throw new Error('进程标识无效。');
+    const verified = await client().installation();
+    const tx = await prepareTransaction({ root: installRoot, userData: userDataDir, dshHome, file: verified.file, sha256: verified.sha256,
+      version: verified.release.version, edition: fs.existsSync(path.join(installRoot, '.dsh-portable')) ? 'portable' : 'installer', parentPid }, NODE_EXE, appRoot);
+    client().installing(); return { id: tx.id };
+  },
   // ---- profile 编排 ----
   'profile.upgradePreflight': () => core.upgradePreflight(),
   'profile.migrateAndSync': (_p) => core.migrateAndSync(),

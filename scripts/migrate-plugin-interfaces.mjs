@@ -25,20 +25,27 @@ const owners = [renderer, locale, 'dsh-client-connection', sessions, workspaces,
 const reviewed = [
   ['dsh-plugin-wallpaper-engine', '0.6.7', 'dsh-plugin-wallpaper-engine-0.6.7.tgz',
     '18dfd3223c25d6aba8400066a90190bbb60e9c56e68177383e9c9b77361c36a4', [renderer]],
+  // Fingerprints for drag-and-drop, ui-custom and dsh-webui are verified against
+  // the reviewed build inputs that produced the published v1.2.0 seed: their
+  // migrated lib/client.js is byte-identical to the seeded artifacts and the
+  // archive SHA-256 matches .public-seed-build.json.
   ['dsh-drag-and-drop', '0.1.6', 'dsh-drag-and-drop-0.1.6.tgz',
-    '9421006e694dbb4fa3784d1b429785a24422fd69d46dcf35a73c62b72c33d7c2',
+    '3df0148fc1c55c0531a86ca0f9d58b1976ea927cadf685e653ccf2a6f1b7e1d0',
     [sessions, workspaces]],
   ['@dsh-external/dsh-visualize', '0.1.2', 'dsh-external-dsh-visualize-0.1.2.tgz',
     'ee4ff2963c94ac77bddc3126e84ba1f77c374c334f4d0d1fc184a6c2d6c4d808',
     [renderer, 'dsh-client-ui-tool', 'dsh-client-ui-conversation']],
+  // Fingerprint verified against the reviewed build input that produced the
+  // published v1.2.0 seed: its migrated lib/client.js is byte-identical to the
+  // seeded artifact, and the archive digest matches .public-seed-build.json.
   ['@dsh-external/dsh-webui', '0.5.1', 'dsh-external-dsh-webui-0.5.1.tgz',
-    '68b2895fae3f644303d10578b8141e3d2a6903b6a77d3452739f3cc2c73e54d7',
+    'f6994a0b48b1673b8e2658787d164689ead473a3ce4f1584cdac9299be76f9b7',
     [...owners, 'dsh-client-ui-conversation']],
   ['dsh-usage-skill', '0.3.0', 'dsh-usage-skill-0.3.0.tgz',
     'ff74e3ae3a28ec89e392afe3cbf47db0a60e1504dedeae54e6a384a346cc8108',
     [renderer, locale]],
   ['@ha-na-bi/dsh-client-ui-custom', '0.1.0-rc.6', 'ha-na-bi-dsh-client-ui-custom-0.1.0-rc.6.tgz',
-    '71d9513692b1cd8450e734b8f3b5fad2e304cd3b6d4c1bfa5a9a3a9a59255d89',
+    'ac9a75f574106c586c359af34ea0248bbd5c965a351a782bc693df53ec493d4d',
     owners],
   ['@local/dsh-webui-statem-bridge', '1.2.2', 'local-dsh-webui-statem-bridge-1.2.2.tgz',
     'feade65f2ec60bd847a7b8fc1315ca1ce869990404ea21f64663f8d24e6e0456', []],

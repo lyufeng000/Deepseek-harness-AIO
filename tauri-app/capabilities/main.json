@@ -7,6 +7,7 @@
   },
   "windows": ["main"],
   "permissions": [
+    "allow-client-update",
     "core:event:allow-listen",
     "core:event:allow-unlisten",
     "core:window:allow-start-dragging",

@@ -40,7 +40,14 @@ test('AIO remains isolated from every legacy product by default', () => {
   assert.match(paths, /user_data\.join\("dsh-home"\)/);
   assert.match(migrate, /DSH_AIO_IMPORT_LEGACY/);
   assert.match(migrate, /!= Ok\("1"\)/);
-  assert.match(nsh, /taskkill \/F \/T \/IM "DSHEAC AIO\.exe"/);
+  // The hook must never kill by bare image name; it compares each candidate's
+  // real ExecutablePath with $INSTDIR and aborts when classification fails.
+  assert.doesNotMatch(nsh, /taskkill[^\n]*\/IM\s+"DSHEAC AIO\.exe"/i);
+  assert.match(nsh, /aio-stop-installed\.ps1/);
+  assert.match(nsh, /AIO_TARGET_ROOT/);
+  const stop = read('assets/update/stop-installed.ps1');
+  assert.match(stop, /ExecutablePath/);
+  assert.match(stop, /AIO_TARGET_ROOT/);
   assert.ok(!/taskkill[^\n]+v4Lite/i.test(nsh));
   assert.match(electron, /\.dsh-aio/);
   assert.match(electron, /com\.deepseek\.dsh\.desktop\.aio/);
@@ -63,9 +70,17 @@ test('every Tauri bundle rebuilds and privacy-checks its seed before staging', (
   const pkg = JSON.parse(read('tauri-app/package.json'));
   assert.equal(conf.build.beforeBuildCommand, 'npm run prepare:bundle');
   const prepare = pkg.scripts['prepare:bundle'];
-  assert.match(prepare, /sidecar:build/);
-  assert.match(prepare, /sanitize-public-seed\.mjs \.\. && node scripts\/stage\.ts$/);
-  assert.ok(prepare.indexOf('sidecar:build') < prepare.indexOf('sanitize-public-seed'));
+  // One orchestration entry owns sidecar compilation, seed privacy review and
+  // staging exactly once, in that order.
+  assert.equal(prepare, 'node ../scripts/prepare-aio.mjs');
+  const orchestration = read('scripts/prepare-aio.mjs');
+  const sidecar = orchestration.indexOf("step('sidecar'");
+  const sanitize = orchestration.indexOf('sanitize-public-seed.mjs');
+  const staging = orchestration.indexOf("step('staging'");
+  assert.ok(sidecar >= 0 && sanitize > sidecar && staging > sanitize,
+    'prepare-aio.mjs must compile sidecar, privacy-check seed, then stage');
+  assert.match(orchestration, /tsc/);
+  assert.match(orchestration, /stage\.ts/);
   const root = JSON.parse(read('package.json'));
   assert.equal(root.scripts.pretest, 'npm --prefix tauri-app run sidecar:build');
 });
@@ -77,9 +92,13 @@ test('AIO update smoke rejects client self-update exposure', () => {
 });
 
 test('release scripts compute SHA-256 without PowerShell module autoloading', () => {
-  for (const rel of ['scripts/build-aio-release.ps1', 'scripts/verify-aio-installer.ps1']) {
-    const source = read(rel);
-    assert.match(source, /System\.Security\.Cryptography\.SHA256/);
-    assert.ok(!source.includes('Get-FileHash'), `${rel} must work when Microsoft.PowerShell.Utility is not auto-loaded`);
+  for (const rel of ['scripts/build-aio-package.ps1', 'scripts/build-aio-release.ps1', 'scripts/verify-aio-installer.ps1']) {
+    assert.ok(!read(rel).includes('Get-FileHash'), `${rel} must work when Microsoft.PowerShell.Utility is not auto-loaded`);
   }
+  assert.match(read('scripts/verify-aio-installer.ps1'), /System\.Security\.Cryptography\.SHA256/);
+  // Artifact hashing is owned by the node provenance step invoked from the
+  // unified entry, not by a PowerShell cmdlet that may not be auto-loaded.
+  assert.match(read('scripts/build-aio-package.ps1'), /build-provenance\.mjs/);
+  assert.match(read('scripts/build-provenance.mjs'), /createHash\('sha256'\)/);
+  assert.match(read('scripts/build-aio-release.ps1'), /build-aio-package\.ps1/);
 });

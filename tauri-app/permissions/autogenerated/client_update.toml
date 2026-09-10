@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-client-update"
+description = "Enables the client_update command without any pre-configured scope."
+commands.allow = ["client_update"]
+
+[[permission]]
+identifier = "deny-client-update"
+description = "Denies the client_update command without any pre-configured scope."
+commands.deny = ["client_update"]

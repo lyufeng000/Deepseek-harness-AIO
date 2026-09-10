@@ -12,6 +12,10 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { createHash } = require('node:crypto');
+// Node 24 supports require() of ESM modules; the helper shares the exact
+// fingerprint algorithm with the build so the guard cannot drift from it.
+const { sourceFingerprint } = require('./build-source-fingerprint.mjs');
 
 const IGNORED_PREFIXES = ['dist/', 'node_modules/', 'vendor/', '.git/', 'tauri-app/target/'];
 
@@ -61,6 +65,21 @@ function collectArtifacts(repoRoot, distDir) {
   return artifacts;
 }
 
+function hashFile(file) {
+  const hash = createHash('sha256');
+  hash.update(fs.readFileSync(file));
+  return hash.digest('hex');
+}
+
+function provenanceFor(candidates) {
+  for (const dir of candidates) {
+    const file = path.join(dir, 'build-provenance.json');
+    if (!fs.existsSync(file)) continue;
+    try { return { dir, data: JSON.parse(fs.readFileSync(file, 'utf8')) }; } catch { return { dir, invalid: true }; }
+  }
+  return null;
+}
+
 function verifyDistFresh(repoRoot, distDir) {
   const candidates = distDir ? [distDir] : defaultArtifactDirs(repoRoot);
   let artifacts = [];
@@ -75,6 +94,23 @@ function verifyDistFresh(repoRoot, distDir) {
   if (!artifacts.length) {
     return { ok: false, offenders: [], error: 'no packaged artifacts (*.exe) found in ' + candidates.join(' | ') };
   }
+  // Prefer the content binding written by the build; fall back to mtimes only
+  // for legacy/untracked layouts without provenance.
+  const provenance = provenanceFor(candidates);
+  if (provenance?.data?.sourceFingerprint) {
+    const current = sourceFingerprint(repoRoot);
+    if (current !== provenance.data.sourceFingerprint) {
+      return { ok: false, offenders: [], mode: 'content',
+        error: 'source content changed after the artifacts were built (provenance mismatch)' };
+    }
+    for (const [name, expected] of Object.entries(provenance.data.artifacts || {})) {
+      const file = path.join(provenance.dir, ...name.split('/'));
+      if (!fs.existsSync(file)) return { ok: false, offenders: [name], mode: 'content', error: 'provenance artifact is missing: ' + name };
+      if (hashFile(file) !== expected) return { ok: false, offenders: [name], mode: 'content', error: 'provenance artifact hash mismatch: ' + name };
+    }
+    return { ok: true, offenders: [], mode: 'content' };
+  }
+  if (provenance?.invalid) return { ok: false, offenders: [], error: 'build-provenance.json is not valid JSON' };
   const artifactTime = Math.min(...artifacts.map((p) => fs.statSync(p).mtimeMs));
   const offenders = [];
   for (const rel of listSources(repoRoot)) {
@@ -83,7 +119,7 @@ function verifyDistFresh(repoRoot, distDir) {
     try { st = fs.statSync(p); } catch { continue; }
     if (st.mtimeMs > artifactTime) offenders.push(rel);
   }
-  return { ok: offenders.length === 0, offenders, artifactTime };
+  return { ok: offenders.length === 0, offenders, artifactTime, mode: 'mtime' };
 }
 
 module.exports = { verifyDistFresh };
@@ -92,7 +128,9 @@ if (require.main === module) {
   const repoRoot = process.argv[2] ? path.resolve(process.argv[2]) : path.resolve(__dirname, '..');
   const r = verifyDistFresh(repoRoot);
   if (r.ok) {
-    console.log('verify-dist-fresh: OK — artifacts newer than every tracked source file');
+    console.log(r.mode === 'content'
+      ? 'verify-dist-fresh: OK — artifact hashes and source content match build provenance'
+      : 'verify-dist-fresh: OK — artifacts newer than every tracked source file');
     process.exit(0);
   }
   console.error('verify-dist-fresh: STALE — ' + (r.error || `${r.offenders.length} source file(s) modified after the artifacts were built:`));

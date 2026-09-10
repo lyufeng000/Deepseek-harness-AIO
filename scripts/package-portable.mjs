@@ -1,0 +1,11 @@
+import path from 'node:path';
+import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
+const root = path.resolve(import.meta.dirname, '..');
+const arg = name => process.argv[process.argv.indexOf(name) + 1];
+const target = path.resolve(arg('--target')), output = path.resolve(arg('--out'));
+const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'))).version;
+fs.mkdirSync(output, { recursive: true });
+const zip = path.join(output, `DSHEAC-AIO-v${version}-Portable-x64.zip`);
+const result = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(root, 'scripts/package-portable.ps1'), '-Executable', path.join(target, 'release/DSHEAC AIO.exe'), '-Resources', path.join(root, 'tauri-app/resources'), '-Output', zip, '-Version', version], { stdio: 'inherit', windowsHide: true });
+if (result.error || result.status !== 0) throw new Error('Portable packaging failed');

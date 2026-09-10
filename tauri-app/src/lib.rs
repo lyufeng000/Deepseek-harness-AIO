@@ -25,6 +25,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
 
 pub const DISPLAY_RELEASE: &str = concat!("v", env!("CARGO_PKG_VERSION"));
+pub mod client_update;
 
 pub fn run() {
     let app = tauri::Builder::default()
@@ -41,6 +42,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .invoke_handler(tauri::generate_handler![
+            client_update::client_update,
             ipc::renderer_heartbeat,
             ipc::page_error,
             ipc::chrome_init,
@@ -78,6 +80,7 @@ pub fn run() {
                 version,
             );
             let log = std::sync::Arc::new(logging::Logger::open(&paths.logs_dir));
+            client_update::resume_before_boot(&paths);
             match paths.seed_distribution_profile() {
                 Ok(true) => log.log("boot", "已植入发行包内的插件与技能快照"),
                 Ok(false) => {}

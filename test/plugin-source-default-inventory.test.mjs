@@ -10,7 +10,7 @@ import { entryListSchema } from '@deepseek-ai/cordis-plugin-include';
 
 const require = createRequire(import.meta.url);
 const repo = fileURLToPath(new URL('../', import.meta.url));
-const publicSeed = 'H:\\CODEX\\build-inputs\\aio-1.2.0-public-seed-20260908-r4';
+import { publicSeed } from './fixture-paths.mjs';
 const sourceProfile = path.join(repo, 'distribution/profile-seed/profiles/web-desktop');
 const publicProfile = path.join(publicSeed, 'profiles/web-desktop');
 const json = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));

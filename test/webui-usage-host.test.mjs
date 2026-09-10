@@ -23,8 +23,7 @@ import { createUsageState, applyUsageDelta } from '../assets/webui-host/usage/us
 import { unzipArchive } from '../assets/webui-host/usage/archive.mjs';
 
 const repo = fileURLToPath(new URL('../', import.meta.url));
-const publicWebui = resolve(repo, '../build-inputs/aio-1.2.0-public-seed-20260908-r6',
-  'profiles/web-desktop/node_modules/@dsh-external/dsh-webui');
+import { originalWebui as publicWebui, fixtureRoot } from './fixture-paths.mjs';
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const base64 = text => Buffer.from(text).toString('base64');
 const skillText = name => `---\nname: ${name}\ndescription: Public test fixture\n---\nBody\n`;
@@ -36,8 +35,8 @@ async function fixture(t, base = tmpdir()) {
 }
 
 async function packageFixture(t) {
-  // Under test/ so normal module resolution reaches installed public dependencies.
-  const root = await fixture(t, join(repo, 'test'));
+  // Inside workspace temp so normal resolution still reaches public dependencies.
+  const root = await fixture(t, fixtureRoot);
   await fs.mkdir(join(root, 'lib'));
   for (const name of ['package.json', 'lib/usage-host.js']) {
     await fs.copyFile(join(publicWebui, name), join(root, name));

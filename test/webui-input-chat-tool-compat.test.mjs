@@ -9,10 +9,11 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { migrateWebuiInputChatToolShapes } from '../scripts/webui-input-chat-tool-compat.mjs';
 import { migrateWebuiChatRenderers } from '../scripts/webui-chat-compat.mjs';
 
+import { webuiArchive, upstream as upstreamRoot, legacySeed } from './fixture-paths.mjs';
 const original = execFileSync('tar', ['-xOf',
-  'H:/CODEX/build-inputs/aio-v1.1.0-local-packages/dsh-external-dsh-webui-0.5.1.tgz',
+  webuiArchive,
   'package/lib/client.js'], { encoding: 'utf8', maxBuffer: 32 * 1024 ** 2 }).replace(/\r\n/g, '\n');
-const upstream = 'H:/CODEX/deepseek-harness-upstream-20260908/packages/';
+const upstream = upstreamRoot + '/packages/';
 const readOwner = relative => fs.readFileSync(upstream + relative, 'utf8');
 const migrated = migrateWebuiInputChatToolShapes(original);
 const section = (source, startMarker, endMarker = '//#endregion') => {
@@ -304,7 +305,7 @@ test('bounded transform is idempotent, composes with chat helper and preserves u
 
 test('public r6 seed code is independently migratable without touching its files', () => {
   const source = fs.readFileSync(
-    'H:/CODEX/build-inputs/aio-1.2.0-public-seed-20260908-r6/profiles/web-desktop/node_modules/@dsh-external/dsh-webui/lib/client.js', 'utf8');
+    legacySeed + '/profiles/web-desktop/node_modules/@dsh-external/dsh-webui/lib/client.js', 'utf8');
   const output = migrateWebuiInputChatToolShapes(source);
   assert.equal(migrateWebuiInputChatToolShapes(output), output);
   assert.ok(output.includes('snapshot.legacy.turnEnds.get'));

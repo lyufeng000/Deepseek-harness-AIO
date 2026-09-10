@@ -16,8 +16,7 @@ const require = createRequire(import.meta.url);
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 const asset = fs.readFileSync(path.join(plugin, 'lib/client.js'), 'utf8');
-const upstream = process.env.DSH_AIO_COMPAT_UPSTREAM ||
-  path.resolve(root, '../deepseek-harness-upstream-20260908');
+import { upstream } from './fixture-paths.mjs';
 const playwright = process.env.DSH_AIO_COMPAT_PLAYWRIGHT ||
   path.join(process.env.USERPROFILE || '', '.cache/codex-runtimes',
     'codex-primary-runtime/dependencies/node/node_modules/playwright');

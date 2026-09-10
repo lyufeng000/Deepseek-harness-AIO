@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build:inject": "node build-inject.mjs",
-    "prepare:bundle": "npm run build:inject && npm run sidecar:build && npm --prefix .. run build:native && node ../scripts/sanitize-public-seed.mjs .. && node scripts/stage.ts",
+    "prepare:bundle": "node ../scripts/prepare-aio.mjs",
     "tauri": "tauri",
     "dev": "npm run build:inject && npm run sidecar:build && tauri dev",
     "build": "node ../scripts/build-tauri-release.mjs",

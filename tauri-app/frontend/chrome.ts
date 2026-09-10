@@ -11,6 +11,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 declare const window: any;
+import { installClientUpdateUi } from './client-update';
 
 const BAR_ID = '__dsh_desktop_chrome__';
 const BAR_HEIGHT = 36;
@@ -31,6 +32,14 @@ function invoke(cmd: string, args?: Record<string, unknown>): Promise<any> {
 // ---------------------------------------------------------------------------
 
 const dshDesktop = {
+  clientUpdate: {
+    check: () => invoke('client_update', { action: 'check' }),
+    status: () => invoke('client_update', { action: 'status' }),
+    download: () => invoke('client_update', { action: 'download' }),
+    cancel: () => invoke('client_update', { action: 'cancel' }),
+    setNotifications: (enabled: boolean) => invoke('client_update', { action: 'notifications', enabled }),
+    install: () => invoke('client_update', { action: 'install' }),
+  },
   appVersion: '',
   windowControls: {
     minimize: () => invoke('chrome_window', { action: 'minimize' }),
@@ -82,6 +91,7 @@ const dshDesktop = {
 };
 
 window.dshDesktop = dshDesktop;
+const clientUpdateUi = installClientUpdateUi(invoke, tauriEvent());
 
 // ---------------------------------------------------------------------------
 // 页面异常 → 主进程日志；余额推送 → CustomEvent
@@ -254,7 +264,8 @@ function renderMenu() {
     <button class="dch-item" data-act="open-browser">在浏览器中打开</button>
     <button class="dch-item" data-act="open-logs">打开日志目录</button>
     <div class="dch-sep"></div>
-    <button class="dch-item" data-act="about">关于 Deepseek Harness EAC</button>
+    <button class="dch-item" data-act="client-update">检查更新</button>
+    <button class="dch-item" data-act="about">关于 DSHEAC AIO</button>
     <button class="dch-item" data-danger="1" data-act="quit">退出</button>`;
   menuEl.querySelectorAll('.dch-item').forEach((item) => {
     (item as HTMLElement).addEventListener('click', async () => {
@@ -268,6 +279,7 @@ function renderMenu() {
         return;
       }
       closeMenu();
+      if (act === 'client-update') { void clientUpdateUi.show(); return; }
       try { dshDesktop.menu.action(act); } catch { /* ignore */ }
     });
   });

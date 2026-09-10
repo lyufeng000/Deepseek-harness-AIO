@@ -1,4 +1,4 @@
-# Generates build/icon.png, assets/icon.png and assets/tray-icon.png.
+﻿# Generates build/icon.png, assets/icon.png and assets/tray-icon.png.
 #
 # Source of truth: assets/DeepSeekHarness-WhaleGirl.ico when present. The
 # legacy assets/icon.jpg and generated fallback remain for older checkouts.

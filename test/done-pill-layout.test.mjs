@@ -301,9 +301,15 @@ test('headless DOM: contents slots, native chrome and real child resize avoid ov
     }
   });
 
-const installed = process.env.DSH_DONE_PILL_TEST_PACKAGE ||
-  (process.env.APPDATA ? path.join(process.env.APPDATA, 'com.deepseek.dsh.desktop.aio',
-    'dsh-home', 'profiles', 'web-desktop', 'node_modules', '@dsh-external', 'dsh-webui') : '');
+import { originalWebui } from './fixture-paths.mjs';
+// A real installed bundle when present, otherwise the reviewed WebUI archive
+// extracted into the workspace fixture root.
+const installed = [
+  process.env.DSH_DONE_PILL_TEST_PACKAGE,
+  process.env.APPDATA ? path.join(process.env.APPDATA, 'com.deepseek.dsh.desktop.aio',
+    'dsh-home', 'profiles', 'web-desktop', 'node_modules', '@dsh-external', 'dsh-webui') : '',
+  originalWebui,
+].filter(Boolean).find(candidate => fs.existsSync(path.join(candidate, 'lib', 'client.js'))) ?? '';
 
 test('real installed bundle: strict transform, syntax, idempotence and isolated apply',
   { skip: !installed || !fs.existsSync(path.join(installed, 'lib', 'client.js')) }, () => {

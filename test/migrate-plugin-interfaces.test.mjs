@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { Script } from 'node:vm';
 import { createHash } from 'node:crypto';
@@ -12,11 +11,8 @@ import {
 } from '../scripts/migrate-plugin-interfaces.mjs';
 
 // Only explicitly reviewed public build inputs, never a live profile/install.
-const workspace = fileURLToPath(new URL('../../', import.meta.url));
-const archives = process.env.DSH_REVIEWED_PLUGIN_ARCHIVES
-  ?? path.join(workspace, 'build-inputs', 'aio-1.2.0-reviewed-plugins');
-const upstream = process.env.DSH_REVIEWED_UPSTREAM
-  ?? path.join(workspace, 'deepseek-harness-upstream-20260908');
+// Paths are workspace-relative (temp/test-fixtures) and prepared in CI.
+import { reviewedArchives as archives, upstream } from './fixture-paths.mjs';
 const prefix = '@deepseek-ai/';
 const runtime = prefix + 'dsh-client-runtime';
 const store = prefix + 'dsh-client-store';
@@ -185,7 +181,7 @@ for (const spec of reviewedPackages) {
   });
 }
 
-test('custom UI maps only its store module and types; gallery behavior is preserved', t => {
+test('custom UI maps only its store module; gallery behavior is preserved', t => {
   const fixture = extract(t);
   if (!fixture) return;
   const { directory, stage } = fixture;
@@ -202,10 +198,12 @@ test('custom UI maps only its store module and types; gallery behavior is preser
   assert.ok(manifest.dsh.client.inject.includes(prefix + 'dsh-api-session-controller'));
   assert.ok(manifest.dsh.client.inject.includes(prefix + 'dsh-api-workspace-controller'));
   assert.ok(!manifest.dsh.client.inject.includes(store), 'store is seeded, not a service provider');
-  const contract = result.proposedFiles['lib/types/client/settings/contract.d.ts'];
-  assert.match(contract, /dsh-client-ui-settings\/client/);
-  assert.match(contract, /dsh-client-store/);
-  assert.doesNotMatch(contract, /dsh-client-runtime/);
+  // The shipping reviewed archive carries runtime code only; there are no type
+  // declarations to rewrite, so the plan must touch exactly client.js and
+  // package.json and never invent a type file.
+  const planned = Object.keys(result.proposedFiles).sort();
+  assert.deepEqual(planned, ['lib/client.js', 'lib/index.js', 'package.json']);
+  assert.ok(!fs.existsSync(path.join(directory, 'lib/types')), 'no type declarations in the reviewed archive');
 });
 
 test('webui mixed runtime symbols are split, not blindly redirected or dropped', t => {

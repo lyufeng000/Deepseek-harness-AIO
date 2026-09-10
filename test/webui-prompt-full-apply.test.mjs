@@ -9,8 +9,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { migrateWebuiPromptOptimize } from '../scripts/webui-prompt-optimize-compat.mjs';
 
 const require = createRequire(import.meta.url);
-const seed = process.env.DSH_PUBLIC_R6 ||
-  'H:/CODEX/build-inputs/aio-1.2.0-public-seed-20260908-r6';
+import { legacySeed as seed, requireFixture } from './fixture-paths.mjs';
+requireFixture(seed);
 const modules = path.join(seed, 'profiles/web-desktop/node_modules');
 
 // Entire published factories/apply functions and real Cordis registries run.
@@ -86,6 +86,9 @@ for (const mode of ['original', 'locale-only', 'without-remote-capability', 'rep
     }
     let source = fs.readFileSync(client, 'utf8').replace(/\r\n/g, '\n');
     if (id === '@dsh-external/dsh-webui') {
+      // r6 revision: interface migrations applied except the prompt-optimize repair.
+      const r6 = path.join(modules, '@dsh-external/dsh-webui/lib/client.r6.js');
+      if (fs.existsSync(r6)) source = fs.readFileSync(r6, 'utf8').replace(/\r\n/g, '\n');
       if (mode === 'repaired' || mode === 'without-remote-capability') {
         source = migrateWebuiPromptOptimize(source);
         if (mode === 'without-remote-capability') source = source.replace(

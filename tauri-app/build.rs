@@ -4,6 +4,7 @@
 fn main() {
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
+            "client_update",
             "renderer_heartbeat",
             "page_error",
             "chrome_init",

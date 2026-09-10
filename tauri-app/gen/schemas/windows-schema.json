@@ -225,6 +225,12 @@
           "markdownDescription": "Enables the chrome_window command without any pre-configured scope."
         },
         {
+          "description": "Enables the client_update command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-client-update",
+          "markdownDescription": "Enables the client_update command without any pre-configured scope."
+        },
+        {
           "description": "Enables the guard_action command without any pre-configured scope.",
           "type": "string",
           "const": "allow-guard-action",
@@ -355,6 +361,12 @@
           "type": "string",
           "const": "deny-chrome-window",
           "markdownDescription": "Denies the chrome_window command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the client_update command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-client-update",
+          "markdownDescription": "Denies the client_update command without any pre-configured scope."
         },
         {
           "description": "Denies the guard_action command without any pre-configured scope.",

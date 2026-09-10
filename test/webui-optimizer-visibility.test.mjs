@@ -5,8 +5,8 @@ import vm from 'node:vm';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const seed = process.env.DSH_PUBLIC_R5 ||
-  'H:/CODEX/build-inputs/aio-1.2.0-public-seed-20260908-r5';
+import { publicSeed as seed, requireFixture } from './fixture-paths.mjs';
+requireFixture(seed);
 const webui = `${seed}/profiles/web-desktop/node_modules/@dsh-external/dsh-webui/lib/client.js`;
 const available = fs.existsSync(webui);
 const source = available ? fs.readFileSync(webui, 'utf8') : '';

@@ -40,13 +40,14 @@ function tmpRoot(name) {
 }
 
 // 拉起 sidecar 并返回 { rpc, events, kill }。
-async function startSidecar(home, userData, logs) {
+async function startSidecar(home, userData, logs, extraArgs = []) {
   const child = spawn(process.execPath, [
     HOST,
     '--app-root', ROOT + '/..',
     '--user-data', userData,
     '--logs-dir', logs,
     '--dsh-home', home,
+    ...extraArgs,
   ], { stdio: ['pipe', 'pipe', 'pipe'] });
   const events = [];
   const pending = new Map();
@@ -246,6 +247,40 @@ test('sidecar: 余额价格读写校验', async () => {
     assert.equal(reset.result.ok, true);
     const get2 = await s.rpc('balance.pricesGet', { model: 'deepseek-v4-pro' });
     assert.equal(get2.result.current, null);
+  } finally {
+    s.kill();
+  }
+});
+
+test('sidecar: clientUpdate 初始化、状态、通知偏好与自动检查短路', async () => {
+  const home = tmpRoot('home');
+  const userData = tmpRoot('userdata');
+  const logs = path.join(userData, 'logs');
+  fs.mkdirSync(logs, { recursive: true });
+  const installRoot = path.join(userData, 'install');
+  fs.mkdirSync(installRoot, { recursive: true });
+  const downloads = path.join(userData, 'downloads');
+  fs.mkdirSync(downloads, { recursive: true });
+  const s = await startSidecar(home, userData, logs,
+    ['--install-root', installRoot, '--client-version', '1.2.0']);
+  try {
+    const uninitialized = await s.rpc('clientUpdate.status', {});
+    assert.equal(uninitialized.ok, false);
+    assert.match(uninitialized.error, /尚未初始化/);
+    const init = await s.rpc('clientUpdate.init', { downloads });
+    assert.equal(init.result.phase, 'idle');
+    assert.equal(init.result.currentVersion, '1.2.0');
+    const bad = await s.rpc('clientUpdate.init', { downloads: 'relative/path' });
+    assert.equal(bad.ok, false);
+    assert.match(bad.error, /不可用/);
+    assert.equal((await s.rpc('clientUpdate.status', {})).result.notifications, true);
+    const off = await s.rpc('clientUpdate.notifications', { enabled: false });
+    assert.equal(off.result.notifications, false);
+    const invalid = await s.rpc('clientUpdate.notifications', { enabled: 'yes' });
+    assert.equal(invalid.ok, false);
+    assert.match(invalid.error, /布尔值/);
+    const auto = await s.rpc('clientUpdate.check', { manual: false });
+    assert.equal(auto.result, null, '关闭通知后自动检查短路且不联网');
   } finally {
     s.kill();
   }

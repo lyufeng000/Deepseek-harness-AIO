@@ -15,7 +15,7 @@ import { createMigrationStaging, transformPluginInterfaces } from '../scripts/mi
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const read = relative => fs.readFileSync(path.join(root, relative), 'utf8').replace(/\r\n/g, '\n');
-const archive = path.resolve(root, '../build-inputs/aio-v1.1.0-local-packages/dsh-external-dsh-webui-0.5.1.tgz');
+import { webuiArchive as archive } from './fixture-paths.mjs';
 const original = execFileSync('tar', ['-xOf', archive, 'package/lib/client.js'],
   { encoding: 'utf8', maxBuffer: 32 * 1024 ** 2 }).replace(/\r\n/g, '\n');
 

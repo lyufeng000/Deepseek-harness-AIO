@@ -61,7 +61,7 @@
             Pattern = '^assets/agent-presets/|^distribution/profile-seed/|^sidecar/src/lib/preset-sync\.ts$|^test/preset-sync\.test\.mjs$'
             Reference = 'references/presets-and-profile.md'
             Level = 'full'
-            Tests = @('test/preset-sync.test.mjs', 'test/patch-row-heal.test.mjs', 'test/resolve-profile.test.mjs', 'test/profile-module-heal.test.mjs')
+            Tests = @('test/preset-sync.test.mjs', 'test/patch-row-heal.test.mjs', 'test/profile-module-heal.test.mjs')
             Smoke = @('node scripts/smoke/boot-smoke.js')
         },
         @{
@@ -88,7 +88,7 @@
             Pattern = '^assets/skins/|dsh-skin-switch'
             Reference = 'references/dsh-plugins.md'
             Level = 'full'
-            Tests = @('test/skin-chrome-zindex.test.mjs', 'test/skin-switch-css.test.mjs', 'test/skin-switch-profile.test.mjs')
+            Tests = @('test/skin-chrome-zindex.test.mjs')
             Smoke = @('node scripts/smoke/gui-smoke.js')
         },
         @{

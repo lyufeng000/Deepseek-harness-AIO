@@ -20,6 +20,12 @@ on:
 permissions:
   contents: write
 
+# A self-hosted runner shares one work tree and its build caches. Never let two
+# builds mutate them at once, and never cancel mid-publish.
+concurrency:
+  group: aio-build-${{ github.repository }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: [self-hosted, Windows, X64, aio]
@@ -42,25 +48,31 @@ jobs:
           cache: npm
           cache-dependency-path: a/package-lock.json
 
+      - name: Cache Cargo toolchain and target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: a/tauri-app
+          cache-on-failure: true
+
       - name: Verify Rust toolchain
         shell: pwsh
         run: |
           rustc --version
           cargo --version
 
-      - name: Prepare clean build-input directories
-        shell: pwsh
-        run: |
-          foreach ($relative in @('temp\build-inputs\release', 'temp\build-inputs\extracted', 'vendor')) {
-            $path = Join-Path (Join-Path $env:GITHUB_WORKSPACE 'a') $relative
-            if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force }
-          }
-
-      - name: Download and verify build inputs
+      - name: Download or reuse verified build inputs
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          function Get-Sha256Hex([string]$Path) {
+            $stream = [IO.File]::OpenRead($Path)
+            try {
+              $sha = [Security.Cryptography.SHA256]::Create()
+              try { return (($sha.ComputeHash($stream) | ForEach-Object { $_.ToString('x2') }) -join '') }
+              finally { $sha.Dispose() }
+            } finally { $stream.Dispose() }
+          }
           $repo = Join-Path $env:GITHUB_WORKSPACE 'a'
           $download = Join-Path $repo 'temp\build-inputs\release'
           $extract = Join-Path $repo 'temp\build-inputs\extracted'
@@ -70,15 +82,31 @@ jobs:
           $zipAsset = $release.assets | Where-Object { $_.name -like 'DSHEAC-AIO-build-inputs-*.zip' } | Select-Object -First 1
           $checksumAsset = $release.assets | Where-Object { $_.name -like 'DSHEAC-AIO-build-inputs-*.zip.sha256' } | Select-Object -First 1
           if (-not $zipAsset -or -not $checksumAsset) { throw 'Build-inputs release assets were not found' }
+          $expected = ($zipAsset.digest -replace '^sha256:', '').ToLowerInvariant()
+          if (-not $expected) { throw 'Build-inputs asset digest is unavailable' }
           $archive = Join-Path $download $zipAsset.name
-          $checksum = Join-Path $download $checksumAsset.name
-          Invoke-WebRequest -Uri $zipAsset.browser_download_url -OutFile $archive -TimeoutSec 600
-          Invoke-WebRequest -Uri $checksumAsset.browser_download_url -OutFile $checksum -TimeoutSec 60
-          & .\scripts\verify-build-inputs.ps1 -Archive $archive -ChecksumFile $checksum -ExtractTo $extract
-          $manifest = Get-Content -LiteralPath (Join-Path $extract 'build-inputs-manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-          $seed = Join-Path $extract $manifest.profileSeed.directory
-          Move-Item -LiteralPath (Join-Path $extract 'vendor') -Destination (Join-Path $repo 'vendor')
+          $manifest = Join-Path $extract 'build-inputs-manifest.json'
+          $reuse = (Test-Path -LiteralPath $archive) -and (Get-Sha256Hex $archive) -eq $expected -and (Test-Path -LiteralPath $manifest)
+          if ($reuse) {
+            Write-Host "Reusing verified build inputs for $expected"
+          } else {
+            $checksum = Join-Path $download $checksumAsset.name
+            Invoke-WebRequest -Uri $zipAsset.browser_download_url -OutFile $archive -TimeoutSec 600
+            Invoke-WebRequest -Uri $checksumAsset.browser_download_url -OutFile $checksum -TimeoutSec 60
+            if (Test-Path -LiteralPath $extract) { Remove-Item -LiteralPath $extract -Recurse -Force }
+            & .\scripts\verify-build-inputs.ps1 -Archive $archive -ChecksumFile $checksum -ExtractTo $extract
+          }
+          $manifestData = Get-Content -LiteralPath $manifest -Raw -Encoding UTF8 | ConvertFrom-Json
+          $seed = Join-Path $extract $manifestData.profileSeed.directory
+          if (-not (Test-Path -LiteralPath (Join-Path $seed 'profiles\web-desktop\node_modules'))) { throw 'Profile seed is incomplete' }
           "PROFILE_SEED_DIR=$seed" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $vendor = Join-Path $repo 'vendor'
+          $sourceVendor = Join-Path $extract 'vendor'
+          if (Test-Path -LiteralPath $sourceVendor) {
+            if (Test-Path -LiteralPath $vendor) { Remove-Item -LiteralPath $vendor -Recurse -Force }
+            Copy-Item -LiteralPath $sourceVendor -Destination $vendor -Recurse -Force
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $vendor 'node\node.exe'))) { throw 'Bundled Node runtime is missing' }
 
       - name: Install dependencies
         shell: pwsh
@@ -99,6 +127,7 @@ jobs:
           path: |
             a/dist/*.exe
             a/dist/*.txt
+            a/dist/*.json
             a/dist/portable/*.zip
             a/dist/portable/*.txt
           if-no-files-found: error
@@ -114,3 +143,4 @@ jobs:
             a/dist/*.exe
             a/dist/portable/*.zip
             a/dist/SHA256SUMS.txt
+            a/dist/build-provenance.json

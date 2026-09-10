@@ -1,5 +1,160 @@
 (() => {
-  // frontend/chrome.ts
+  // tauri-app/frontend/client-update.ts
+  function installClientUpdateUi(invoke2, events) {
+    let dialog;
+    let interval;
+    let busy = false;
+    const call = (action, extra = {}) => invoke2("client_update", { action, ...extra });
+    const close = () => {
+      if (interval) clearInterval(interval);
+      interval = void 0;
+      dialog?.close();
+      dialog?.remove();
+      dialog = void 0;
+    };
+    const open = () => {
+      if (dialog) return dialog;
+      dialog = document.createElement("dialog");
+      dialog.setAttribute("aria-label", "DSHEAC AIO \u5BA2\u6237\u7AEF\u66F4\u65B0");
+      dialog.style.cssText = "width:min(520px,90vw);max-height:80vh;border:1px solid #7c8394;border-radius:16px;padding:24px;background:#18202d;color:#f1f5f9;font:15px/1.6 system-ui;z-index:2147483647;box-shadow:0 20px 80px #0008";
+      dialog.addEventListener("cancel", (e) => {
+        e.preventDefault();
+        if (!busy) close();
+      });
+      document.body.appendChild(dialog);
+      dialog.showModal();
+      return dialog;
+    };
+    const text = (parent, tag, value) => {
+      const node = document.createElement(tag);
+      node.textContent = value;
+      parent.appendChild(node);
+      return node;
+    };
+    const button = (parent, label, fn) => {
+      const element = document.createElement("button");
+      element.textContent = label;
+      element.style.cssText = "margin:12px 8px 0 0;padding:8px 16px;border:1px solid #64748b;border-radius:8px;cursor:pointer;background:#27364a;color:white;font:inherit";
+      element.onclick = () => {
+        Promise.resolve().then(fn).catch(showError);
+      };
+      parent.appendChild(element);
+      return element;
+    };
+    const showError = (error) => {
+      busy = false;
+      const root = open();
+      root.replaceChildren();
+      text(root, "h2", "\u66F4\u65B0\u672A\u5B8C\u6210");
+      text(root, "p", String(error));
+      button(root, "\u91CD\u8BD5\u68C0\u67E5", show);
+      button(root, "\u5173\u95ED", close);
+    };
+    async function render(state2) {
+      busy = false;
+      const root = open();
+      root.replaceChildren();
+      text(root, "h2", "DSHEAC AIO \u66F4\u65B0");
+      if (state2.release) {
+        text(root, "p", `\u5F53\u524D ${state2.currentVersion} \u2192 \u65B0\u7248 ${state2.release.version} \xB7 ${(state2.release.asset.size / 1048576).toFixed(1)} MB`);
+        const notes = text(root, "div", state2.release.notes || "\u6B64\u7248\u672C\u672A\u63D0\u4F9B\u66F4\u65B0\u8BF4\u660E\u3002");
+        notes.style.cssText = "max-height:220px;overflow:auto;white-space:pre-wrap";
+      }
+      if (state2.phase === "available") {
+        button(root, "\u66F4\u65B0", async () => {
+          await render(await call("download"));
+          poll();
+        });
+        button(root, "\u53D6\u6D88", close);
+        button(root, "\u4E0D\u518D\u901A\u77E5", async () => {
+          await call("notifications", { enabled: false });
+          close();
+        });
+      } else if (state2.phase === "downloading") {
+        const progress = document.createElement("progress");
+        progress.max = state2.release.asset.size;
+        progress.value = state2.received;
+        progress.style.width = "100%";
+        root.appendChild(progress);
+        text(root, "p", `\u5DF2\u4E0B\u8F7D ${(state2.received / 1048576).toFixed(1)} MB\u3002\u4E2D\u65AD\u540E\u53EF\u7EE7\u7EED\u4E0B\u8F7D\u3002`);
+        button(root, "\u6682\u505C\u4E0B\u8F7D", async () => {
+          await call("cancel");
+        });
+      } else if (state2.phase === "ready") {
+        text(root, "p", "\u4E0B\u8F7D\u4E0E\u6821\u9A8C\u5B8C\u6210\u3002\u5B89\u88C5\u5C06\u5173\u95ED\u5E94\u7528\u5E76\u53EF\u80FD\u4E2D\u65AD\u6B63\u5728\u8FD0\u884C\u7684\u4EFB\u52A1\uFF0C\u8BF7\u5148\u4FDD\u5B58\u5DE5\u4F5C\u3002\u914D\u7F6E\u548C\u4F1A\u8BDD\u6570\u636E\u5C06\u4FDD\u7559\uFF1B\u5B89\u88C5\u5931\u8D25\u4F1A\u5C1D\u8BD5\u6062\u590D\u65E7\u7248\u672C\u3002");
+        button(root, "\u786E\u8BA4\u4E2D\u65AD\u4EFB\u52A1\u5E76\u5B89\u88C5", async () => {
+          busy = true;
+          root.replaceChildren();
+          text(root, "h2", "\u6B63\u5728\u4EA4\u63A5\u66F4\u65B0");
+          text(root, "p", "\u8BF7\u52FF\u5173\u95ED\u7535\u8111\u3002\u5E94\u7528\u5C06\u9000\u51FA\uFF0C\u66F4\u65B0\u52A9\u624B\u5907\u4EFD\u65E7\u7A0B\u5E8F\u540E\u5B89\u88C5\uFF0C\u9A8C\u8BC1\u6210\u529F\u540E\u91CD\u65B0\u6253\u5F00\u3002");
+          await call("install");
+        });
+        button(root, "\u7A0D\u540E\u5B89\u88C5", close);
+      } else if (["failed", "cancelled"].includes(state2.phase)) {
+        text(root, "p", state2.error || "\u66F4\u65B0\u672A\u5B8C\u6210\u3002");
+        if (state2.release) button(root, "\u91CD\u8BD5\u4E0B\u8F7D", async () => {
+          await render(await call("download"));
+          poll();
+        });
+        else button(root, "\u91CD\u8BD5\u68C0\u67E5", show);
+        button(root, "\u5173\u95ED", close);
+      } else if (state2.phase === "installing") {
+        busy = true;
+        text(root, "p", "\u66F4\u65B0\u52A9\u624B\u6B63\u5728\u5904\u7406\uFF0C\u8BF7\u7A0D\u5019\u3002");
+      } else {
+        text(root, "p", state2.phase === "checking" ? "\u6B63\u5728\u68C0\u67E5\u66F4\u65B0\u2026" : `\u5F53\u524D\u7248\u672C ${state2.currentVersion}\uFF0C\u6682\u65E0\u53EF\u7528\u7684\u65B0\u7248\u672C\u3002`);
+        button(root, "\u5173\u95ED", close);
+      }
+    }
+    function poll() {
+      if (interval) clearInterval(interval);
+      let checking = false;
+      interval = setInterval(async () => {
+        if (checking || !dialog) return;
+        checking = true;
+        try {
+          const state2 = await call("status");
+          await render(state2);
+          if (state2.phase !== "downloading" && interval) {
+            clearInterval(interval);
+            interval = void 0;
+          }
+        } catch (error) {
+          if (interval) clearInterval(interval);
+          showError(error);
+        } finally {
+          checking = false;
+        }
+      }, 700);
+    }
+    async function show() {
+      open().replaceChildren();
+      text(open(), "p", "\u6B63\u5728\u68C0\u67E5\u66F4\u65B0\u2026");
+      try {
+        const state2 = await call("check");
+        await render(state2);
+        if (state2.phase === "downloading") poll();
+      } catch (error) {
+        showError(error);
+      }
+    }
+    let disposed = false, unlisten;
+    events?.listen?.("aio:update", (event) => {
+      if (!disposed && !dialog) void render(event.payload);
+    }).then((fn) => {
+      if (disposed) fn();
+      else unlisten = fn;
+    }).catch(() => {
+    });
+    window.addEventListener("beforeunload", () => {
+      disposed = true;
+      unlisten?.();
+      if (interval) clearInterval(interval);
+    });
+    return { show };
+  }
+
+  // tauri-app/frontend/chrome.ts
   var BAR_ID = "__dsh_desktop_chrome__";
   var BAR_HEIGHT = 36;
   var tauriCore = () => window.__TAURI__?.core;
@@ -12,6 +167,14 @@
     return core.invoke(cmd, args ?? {});
   }
   var dshDesktop = {
+    clientUpdate: {
+      check: () => invoke("client_update", { action: "check" }),
+      status: () => invoke("client_update", { action: "status" }),
+      download: () => invoke("client_update", { action: "download" }),
+      cancel: () => invoke("client_update", { action: "cancel" }),
+      setNotifications: (enabled) => invoke("client_update", { action: "notifications", enabled }),
+      install: () => invoke("client_update", { action: "install" })
+    },
     appVersion: "",
     windowControls: {
       minimize: () => invoke("chrome_window", { action: "minimize" }),
@@ -73,6 +236,7 @@
     }
   };
   window.dshDesktop = dshDesktop;
+  var clientUpdateUi = installClientUpdateUi(invoke, tauriEvent());
   window.addEventListener("error", (e) => {
     try {
       invoke("page_error", { payload: "window.onerror: " + (e && (e.message || e.error) || "unknown") }).catch(() => {
@@ -231,7 +395,8 @@
     <button class="dch-item" data-act="open-browser">\u5728\u6D4F\u89C8\u5668\u4E2D\u6253\u5F00</button>
     <button class="dch-item" data-act="open-logs">\u6253\u5F00\u65E5\u5FD7\u76EE\u5F55</button>
     <div class="dch-sep"></div>
-    <button class="dch-item" data-act="about">\u5173\u4E8E Deepseek Harness EAC</button>
+    <button class="dch-item" data-act="client-update">\u68C0\u67E5\u66F4\u65B0</button>
+    <button class="dch-item" data-act="about">\u5173\u4E8E DSHEAC AIO</button>
     <button class="dch-item" data-danger="1" data-act="quit">\u9000\u51FA</button>`;
     menuEl.querySelectorAll(".dch-item").forEach((item) => {
       item.addEventListener("click", async () => {
@@ -246,6 +411,10 @@
           return;
         }
         closeMenu();
+        if (act === "client-update") {
+          void clientUpdateUi.show();
+          return;
+        }
         try {
           dshDesktop.menu.action(act);
         } catch {

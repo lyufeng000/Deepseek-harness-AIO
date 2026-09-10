@@ -7,8 +7,8 @@ import * as jsx from 'react/jsx-runtime';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { migrateWebuiContinue } from '../scripts/webui-continue-compat.mjs';
 
-const seed = process.env.DSH_PUBLIC_R5 ||
-  'H:/CODEX/build-inputs/aio-1.2.0-public-seed-20260908-r5';
+import { legacySeed as seed, requireFixture } from './fixture-paths.mjs';
+requireFixture(seed);
 const file = `${seed}/profiles/web-desktop/node_modules/@dsh-external/dsh-webui/lib/client.js`;
 const available = fs.existsSync(file);
 const source = available ? fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n') : '';

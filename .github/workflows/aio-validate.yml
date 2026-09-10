@@ -2,7 +2,7 @@ name: AIO validation
 
 on:
   pull_request:
-    branches: [aio-v1]
+    branches: [aio-v1, main]
     paths:
       - '.agents/skills/**'
       - '.github/workflows/aio-validate.yml'
@@ -20,9 +20,14 @@ on:
       - '*.md'
       - '*.yml'
 
+permissions:
+  contents: read
+
 jobs:
   test-aio:
     runs-on: windows-latest
+    env:
+      BUILD_INPUTS_TAG: build-inputs-v1.2.0
     steps:
       - uses: actions/checkout@v4
         with:
@@ -45,6 +50,43 @@ jobs:
         run: |
           npm --prefix tauri-app run sidecar:check
           npm --prefix tauri-app run sidecar:build
+
+      - name: Cache build inputs
+        id: inputs-cache
+        uses: actions/cache@v4
+        with:
+          path: temp/build-inputs/release
+          key: aio-validate-inputs-${{ env.BUILD_INPUTS_TAG }}
+
+      - name: Download build inputs
+        if: steps.inputs-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $download = Join-Path $env:GITHUB_WORKSPACE 'temp\build-inputs\release'
+          New-Item -ItemType Directory -Path $download -Force | Out-Null
+          $headers = @{ Accept = 'application/vnd.github+json'; 'User-Agent' = 'DSHEAC-AIO-validate' }
+          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/tags/$env:BUILD_INPUTS_TAG" -Headers $headers -TimeoutSec 60
+          $zipAsset = $release.assets | Where-Object { $_.name -like 'DSHEAC-AIO-build-inputs-*.zip' } | Select-Object -First 1
+          $checksumAsset = $release.assets | Where-Object { $_.name -like 'DSHEAC-AIO-build-inputs-*.zip.sha256' } | Select-Object -First 1
+          if (-not $zipAsset -or -not $checksumAsset) { throw 'Build-inputs release assets were not found' }
+          Invoke-WebRequest -Uri $zipAsset.browser_download_url -OutFile (Join-Path $download $zipAsset.name) -TimeoutSec 600
+          Invoke-WebRequest -Uri $checksumAsset.browser_download_url -OutFile (Join-Path $download $checksumAsset.name) -TimeoutSec 60
+
+      - name: Prepare test fixtures
+        shell: pwsh
+        run: |
+          $download = Join-Path $env:GITHUB_WORKSPACE 'temp\build-inputs\release'
+          $extract = Join-Path $env:GITHUB_WORKSPACE 'temp\build-inputs\extracted'
+          $zip = Get-ChildItem -LiteralPath $download -Filter '*.zip' | Select-Object -First 1
+          $checksum = Get-ChildItem -LiteralPath $download -Filter '*.sha256' | Select-Object -First 1
+          if (-not $zip -or -not $checksum) { throw 'Build-inputs archive is missing' }
+          if (Test-Path -LiteralPath $extract) { Remove-Item -LiteralPath $extract -Recurse -Force }
+          & .\scripts\verify-build-inputs.ps1 -Archive $zip.FullName -ChecksumFile $checksum.FullName -ExtractTo $extract
+          $manifest = Get-Content -LiteralPath (Join-Path $extract 'build-inputs-manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+          $seed = Join-Path $extract $manifest.profileSeed.directory
+          $env:DSH_PROFILE_SEED_DIR = $seed
+          "DSH_PROFILE_SEED_DIR=$seed" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          node scripts/prepare-test-fixtures.mjs
 
       - name: Scan public seed
         run: npm run seed:sanitize

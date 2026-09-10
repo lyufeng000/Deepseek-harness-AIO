@@ -30,9 +30,12 @@ test('PREINSTALL：只终止 AIO 本代进程（/F /T），保持其他产品运
   const start = lines.findIndex((l) => l.includes('!macro _dshKillAll'));
   const end = lines.findIndex((l, i) => i > start && l.trim() === '!macroend');
   const block = lines.slice(start, end + 1).join('\n');
-  for (const app of CURRENT) {
-    assert.ok(block.includes(`taskkill /F /T /IM "${app}"`), `应杀 ${app}`);
-  }
+  assert.match(block, /aio-stop-installed\.ps1/);
+  assert.match(block, /AIO_TARGET_ROOT/);
+  const stop = fs.readFileSync(join(root, 'assets/update/stop-installed.ps1'), 'utf8');
+  assert.match(stop, /ExecutablePath/);
+  assert.match(stop, /taskkill\.exe \/PID \$target.ProcessId \/T \/F/);
+  assert.doesNotMatch(stop, /\/IM /);
   for (const app of OTHER_PRODUCTS) {
     assert.ok(!block.includes(`/IM "${app}"`), `不得终止其他产品 ${app}`);
   }

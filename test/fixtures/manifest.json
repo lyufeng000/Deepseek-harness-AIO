@@ -1,0 +1,50 @@
+{
+  "webui": {
+    "file": "webui-0.5.1.tgz",
+    "package": "@dsh-external/dsh-webui",
+    "version": "0.5.1",
+    "sha256": "2d98d1f0c2ec93414c917a923c9ea804e4b1dcdcf58b1d780aa7ac023bd5557b",
+    "source": "Existing reviewed AIO build input, retained verbatim for migration regression tests"
+  },
+  "upstream": {
+    "repository": "https://github.com/deepseek-ai/deepseek-harness.git",
+    "commit": "c389f96bf3a9b6807cb71ed6bdad5849be0df6d8"
+  },
+  "reviewedPlugins": {
+    "dsh-drag-and-drop-0.1.6.tgz": {
+      "package": "dsh-drag-and-drop", "version": "0.1.6",
+      "treeSha256": "3df0148fc1c55c0531a86ca0f9d58b1976ea927cadf685e653ccf2a6f1b7e1d0",
+      "source": "Reviewed AIO build input that produced the published v1.2.0 seed"
+    },
+    "dsh-external-dsh-visualize-0.1.2.tgz": {
+      "package": "@dsh-external/dsh-visualize", "version": "0.1.2",
+      "treeSha256": "ee4ff2963c94ac77bddc3126e84ba1f77c374c334f4d0d1fc184a6c2d6c4d808",
+      "source": "Reviewed AIO build input that produced the published v1.2.0 seed"
+    },
+    "dsh-plugin-wallpaper-engine-0.6.7.tgz": {
+      "package": "dsh-plugin-wallpaper-engine", "version": "0.6.7",
+      "treeSha256": "18dfd3223c25d6aba8400066a90190bbb60e9c56e68177383e9c9b77361c36a4",
+      "source": "Reviewed AIO build input that produced the published v1.2.0 seed"
+    },
+    "ha-na-bi-dsh-client-ui-custom-0.1.0-rc.6.tgz": {
+      "package": "@ha-na-bi/dsh-client-ui-custom", "version": "0.1.0-rc.6",
+      "treeSha256": "ac9a75f574106c586c359af34ea0248bbd5c965a351a782bc693df53ec493d4d",
+      "source": "Reviewed AIO build input that produced the published v1.2.0 seed"
+    },
+    "local-dsh-webui-statem-bridge-1.2.2.tgz": {
+      "package": "@local/dsh-webui-statem-bridge", "version": "1.2.2",
+      "treeSha256": "feade65f2ec60bd847a7b8fc1315ca1ce869990404ea21f64663f8d24e6e0456",
+      "source": "Reviewed AIO build input that produced the published v1.2.0 seed"
+    },
+    "vlln-dsh-navbar-0.4.0.tgz": {
+      "package": "@vlln/dsh-navbar", "version": "0.4.0",
+      "treeSha256": "9e990f23042c40078a9c8f0214087d33dd3a3552286ad4b14f8930132208ec7b",
+      "source": "Retired reviewed plugin repacked from the v1.1.0 portable seed tree, which matches the reviewed digest"
+    },
+    "dsh-usage-skill-0.3.0.tgz": {
+      "package": "dsh-usage-skill", "version": "0.3.0",
+      "treeSha256": "ff74e3ae3a28ec89e392afe3cbf47db0a60e1504dedeae54e6a384a346cc8108",
+      "source": "Retired reviewed plugin repacked from the v1.1.0 portable seed tree, which matches the reviewed digest"
+    }
+  }
+}

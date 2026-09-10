@@ -45,11 +45,9 @@ test('unknown renderer shapes fail closed and unrelated session hooks stay uncha
   assert.ok(migrateWebuiChatRenderers(input + outside).endsWith(outside));
 });
 
-test('reviewed WebUI components render one reasoning and tool capsule per turn', t => {
-  const archives = process.env.DSH_REVIEWED_PLUGIN_ARCHIVES
-    ?? fileURLToPath(new URL('../../build-inputs/aio-1.2.0-reviewed-plugins/', import.meta.url));
-  const archive = path.join(archives, 'dsh-external-dsh-webui-0.5.1.tgz');
-  if (!fs.existsSync(archive)) return t.skip('Reviewed WebUI archive unavailable');
+test('reviewed WebUI components render one reasoning and tool capsule per turn', async t => {
+  const { webuiArchive: archive, requireFixture } = await import('./fixture-paths.mjs');
+  requireFixture(archive);
   const source = execFileSync('tar', ['-xOf', archive, 'package/lib/client.js'],
     { encoding: 'utf8', maxBuffer: 30 * 1024 ** 2 });
   const migrated = migrateWebuiChatRenderers(source);

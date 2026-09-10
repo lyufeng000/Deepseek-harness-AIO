@@ -6,9 +6,9 @@
 >
 > **用户可见版本：v1**
 >
-> 机器内部 SemVer：`1.1.0`
+> 机器内部 SemVer：`1.2.0`
 >
-> 上游源码基线：`v4.5-lite`，commit `de55ef6d5319eacc24ce60309acc261b9fb78b6c`
+> 上游 DSH 基线：`0.1.3-alpha.2`，commit `c389f96bf3a9b6807cb71ed6bdad5849be0df6d8`
 
 AIO 不表示包含上游项目所有历史功能；实际功能以本仓库打包的运行时、插件和 profile 清单为准。
 
@@ -40,19 +40,30 @@ AIO 不表示包含上游项目所有历史功能；实际功能以本仓库打�
 
 发布产物：
 
-- `dist/DSHEAC-AIO-v1-Setup-x64.exe`
-- `dist/portable/DSHEAC-AIO-v1-Portable-x64.zip`
-- `dist/SHA256SUMS.txt`
+- `dist/DSHEAC-AIO-v1.2.0-Setup-x64.exe`
+- `dist/portable/DSHEAC-AIO-v1.2.0-Portable-x64.zip`
+- `dist/SHA256SUMS.txt`、`dist/portable/SHA256SUMS.txt`
+- `dist/build-provenance.json`
 
 安装包目前未签名。Windows SmartScreen 可能提示未知发布者；运行前请核对 SHA-256。
+
+## 客户端更新
+
+- 更新源固定为 `lyufeng000/Deepseek-harness-AIO` 的 GitHub Releases，仅接受正式的 `vX.Y.Z` 应用版本，排除草稿、预发布和 `build-inputs-*`。
+- 启动就绪后延迟检查一次，最多自动提示一次；弹窗提供「更新 / 取消 / 不再通知」。「不再通知」永久关闭自动检查，但手动「检查更新」始终可用。
+- 安装版下载 `Setup-x64.exe`；便携版下载 `Portable-x64.zip` 并在同盘替换。下载到系统下载目录的 `DSHEAC-AIO\<版本>` 子目录，展示进度，支持取消、重试与 `.part` Range 续传。
+- 固定 HTTPS 来源与合法跳转，核对资源大小、SHA-256 与 GitHub digest；摘要缺失或不匹配、版本/架构不符都停止安装。
+- 安装使用独立原生更新助手，主程序在助手接管后才退出；安装前备份程序与用户数据，失败按事务日志回滚。配置迁移可恢复，用户会话、凭据、自建插件和配置不被覆盖。
 
 ## 从源码构建
 
 详见 [BUILDING.md](docs/BUILDING.md)。标准命令：
 
 ```powershell
-$env:DSH_PROFILE_SEED_DIR = 'D:\reviewed\profile-seed'
-npm run dist
+build-aio.cmd                 # 复用有效缓存
+build-aio.cmd -Clean          # 完整重建
+build-aio.cmd -Verify         # 构建后执行安装/首启/卸载验收
+npm run dist                  # 全量测试 + 构建
 ```
 
 ## 安装验证
@@ -69,7 +80,12 @@ powershell -NoProfile -File .\scripts\verify-aio-installer.ps1
 
 ## 本轮工程改进
 
-- 产品名统一为 `DSHEAC AIO`，用户版本统一为 `v1`，当前内部 SemVer 为 `1.1.0`；
+- 产品名统一为 `DSHEAC AIO`，用户版本统一为 `v1`，当前内部 SemVer 为 `1.2.0`；
+- 新增客户端整包更新（版本发现、通知偏好、下载校验、事务安装与回滚），与插件/内核更新源独立；
+- 安装脚本不再按映像名强杀进程，改为比对实际 `ExecutablePath` 与目标安装目录并按进程树结束；
+- 构建统一到 `build-aio.cmd`，sidecar 编译/原生模块/seed 审核/资源装配每轮只执行一次并带内容指纹缓存；
+- 构建输入按 Release 资产身份与 SHA-256 校验复用；发布产物带 `build-provenance.json`，新鲜度按内容指纹校验；
+- 测试夹具脱离历史盘符，统一声明来源、版本与摘要，落在 `temp/test-fixtures` 并由脚本/CI 准备；
 - 修复 Node `fs.cpSync` 在当前中文长路径工作区中以 `0xC0000409` 崩溃；
 - staging 仅对发布树裁剪 `.map`、`.pdb` 和 ARM64 预编译件；
 - 停用可读取任意绝对路径、且无调用方的壳层预览端口；
@@ -81,7 +97,7 @@ powershell -NoProfile -File .\scripts\verify-aio-installer.ps1
 
 ## 性能说明
 
-AIO profile seed 包含大量小文件，安装时仍会受到磁盘和杀毒软件逐文件扫描影响。当前干净 sidecar 测试中的 profile 初始化约为 0.9 秒；staging 发布裁剪减少了 6797 个调试/source map 文件和 73.1 MiB 未压缩体积。最终安装速度仍以本机正式安装包 E2E 计时为准。
+AIO profile seed 包含大量小文件，安装时仍会受到磁盘和杀毒软件逐文件扫描影响。热构建准备（sidecar、seed 审核、原生模块、staging 全部缓存命中）本地实测约 40 秒，主要成本是内容指纹校验；冷 staging 首次装配约 419 秒。便携 ZIP 在 `Fastest`（163 MB / 10.7s）与 `Optimal`（147 MB / 14.4s）之间选择了发布总耗时更短的 `Fastest`。最终安装速度仍以本机正式安装包 E2E 计时为准。
 
 ## 文档
 

@@ -192,7 +192,9 @@ pub fn start_and_show(state: &Arc<AppState>, overlays: &[String]) -> Result<Stri
     // startAndShow 的「show」半边：导航主窗到 Web UI 并显示。
     // （移植缺失导致窗口停留在隐藏的 about:blank —— 真机验证发现。）
     if let Some(app) = state.app_handle() {
-        navigate_main_to_web(&app, state);
+        if std::env::var_os("AIO_UPDATE_HEALTH_DIR").is_none() {
+            navigate_main_to_web(&app, state);
+        }
     }
     // 服务意外退出监视：曾就绪且非主动重启 → 「DSH 服务已停止」对话框。
     {
@@ -1193,6 +1195,8 @@ fn boot_chain(state: &Arc<AppState>) {
     start_balance_loop(state.clone());
     start_plugin_update_loop(state.clone());
     state.log.log("boot", "启动链路完成");
+    crate::client_update::confirm_health(state);
+    crate::client_update::start(state.clone());
 }
 
 fn junction_tick(state: &AppState) {

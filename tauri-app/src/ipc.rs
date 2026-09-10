@@ -22,7 +22,7 @@ fn ensure_main(window: &WebviewWindow) -> Result<(), String> {
 }
 
 /// 敏感命令第二重校验：调用页必须来自本地壳页面，或运行期确认的 Web UI origin。
-fn ensure_origin(state: &AppState, window: &WebviewWindow) -> Result<(), String> {
+pub(crate) fn ensure_origin(state: &AppState, window: &WebviewWindow) -> Result<(), String> {
     ensure_main(window)?;
     let cur = window.url().map_err(|_| "unauthorized".to_string())?;
     let cur_origin = cur.origin().ascii_serialization();
@@ -162,8 +162,8 @@ pub fn agent_version_info(state: &AppState) -> (String, String) {
 
 fn repo_urls() -> Value {
     json!({
-        "github": "https://github.com/zouyuxuan122/Deepseek-Harness-EAC",
-        "gitee": "https://gitee.com/zouyuxuan122/Deepseek-Harness-EAC",
+        "github": "https://github.com/lyufeng000/Deepseek-harness-AIO",
+        "gitee": "",
     })
 }
 

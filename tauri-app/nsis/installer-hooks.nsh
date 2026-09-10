@@ -14,11 +14,25 @@
 ;     管道读取偶发永不返回；electron-builder 自带 NSIS 加载不了 nsProcess）。
 ;     探测用 nsExec 直接 CreateProcess 的 tasklist /FI CSV /NH，首字符判断。
 
+; Resolve the stop helper relative to this hook file at include time. Inside a
+; macro ${__FILEDIR__} expands to Tauri's generated installer directory, so the
+; path must be frozen into a define at the top level (staging mirrors assets/**
+; into resources/app/assets/**).
+!define AIO_UPDATE_STOP_PS1 "${__FILEDIR__}\..\resources\app\assets\update\stop-installed.ps1"
+
 !macro _dshKillAll
   ; The AIO build has a distinct process name and never terminates the user's
   ; currently running v4Lite or any earlier EAC installation.
-  nsExec::Exec 'taskkill /F /T /IM "DSHEAC AIO.exe"'
+  InitPluginsDir
+  File /oname=$PLUGINSDIR\aio-stop-installed.ps1 "${AIO_UPDATE_STOP_PS1}"
+  System::Call 'kernel32::SetEnvironmentVariable(t "AIO_TARGET_ROOT", t "$INSTDIR") i.r0'
+  nsExec::ExecToStack 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\aio-stop-installed.ps1"'
   Pop $0
+  Pop $1
+  ${If} $0 != 0
+    MessageBox MB_OK|MB_ICONSTOP "无法安全停止此安装目录的进程，操作已中止。请退出应用后重试。" /SD IDOK
+    Abort
+  ${EndIf}
 !macroend
 
 ; 有界等待本代进程退场（最多 20 × 500ms ≈ 10s，超时放行不卡死安装）。
@@ -32,11 +46,10 @@
       MessageBox MB_OK|MB_ICONSTOP "DSHEAC AIO 仍在运行，安装已中止。请先退出程序后重试。" /SD IDOK
       Abort
     ${EndIf}
-    nsExec::ExecToStack 'tasklist /FI "IMAGENAME eq DSHEAC AIO.exe" /FO CSV /NH'
+    nsExec::ExecToStack 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\aio-stop-installed.ps1" -CheckOnly'
     Pop $3
     Pop $0
-    StrCpy $4 $0 1
-    ${If} $4 == '"'
+    ${If} $3 != 0
       Sleep 500
       Goto dshWaitLoop
     ${EndIf}

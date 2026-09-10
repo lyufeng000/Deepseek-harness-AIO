@@ -22,6 +22,9 @@ export const reviewedPublicContent = new Map([
 ]);
 
 export const reviewedPublicAlternates = [
+  // Verified against npm's sha512 integrity and exact official tarball bytes.
+  // https://registry.npmjs.org/zod/-/zod-4.4.3.tgz
+  { file: 'zod/src/v4/classic/tests/string.test.ts', version: '4.4.3', sha256: 'a69bdc042c58e8d940e6a5f09ed93646e697af04869a65cf45e9244e950cfb06' },
   { file: '@koromix/koffi-win32-x64/win32_x64/koffi.node', version: '3.2.1', sha256: '8623dc57f3093a457f71fcbe31fad77741f5b648d8015f7c1dac959595f0972b' },
   { file: '@types/node/fs.d.ts', version: '26.5.0', sha256: '9d37b8a9678efbcdf38238b59ce8e6f7db70aba1a516f3a4a671a301dbacfb3d' },
   { file: '@types/node/http.d.ts', version: '26.5.0', sha256: 'ad50512520720d10294c629cb4e2df23891c3fcbeaca00fbfb9e6bbea65f3dd6' },
