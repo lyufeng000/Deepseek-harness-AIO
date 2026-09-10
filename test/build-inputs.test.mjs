@@ -9,6 +9,9 @@ const read = (rel) => fs.readFileSync(path.join(root, rel), 'utf8');
 test('build-inputs workflow downloads, verifies and builds', () => {
   const workflow = read('.github/workflows/aio-build.yml');
   assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /runs-on: \[self-hosted, Windows, X64, aio\]/);
+  assert.match(workflow, /clean: false/);
+  assert.match(workflow, /Prepare clean build-input directories/);
   assert.match(workflow, /tags:\s*\r?\n\s*- 'v\*'/);
   assert.match(workflow, /gh release download \$env:BUILD_INPUTS_TAG/);
   assert.match(workflow, /verify-build-inputs\.ps1/);

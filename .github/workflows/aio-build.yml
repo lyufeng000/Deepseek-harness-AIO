@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: [self-hosted, Windows, X64, aio]
     env:
       BUILD_INPUTS_TAG: ${{ inputs.build_inputs_tag || 'build-inputs-v1.2.0' }}
       RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}
@@ -30,6 +30,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          clean: false
 
       - uses: actions/setup-node@v4
         with:
@@ -37,6 +38,14 @@ jobs:
           cache: npm
 
       - uses: dtolnay/rust-toolchain@stable
+
+      - name: Prepare clean build-input directories
+        shell: pwsh
+        run: |
+          foreach ($relative in @('temp\build-inputs\release', 'temp\build-inputs\extracted', 'vendor')) {
+            $path = Join-Path $env:GITHUB_WORKSPACE $relative
+            if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force }
+          }
 
       - name: Download and verify build inputs
         shell: pwsh
