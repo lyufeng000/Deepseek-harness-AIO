@@ -48,7 +48,7 @@ AIO 不表示包含上游项目所有历史功能；实际功能以本仓库打�
 
 ## 从源码构建
 
-详见 [BUILDING.md](BUILDING.md)。标准命令：
+详见 [BUILDING.md](docs/BUILDING.md)。标准命令：
 
 ```powershell
 $env:DSH_PROFILE_SEED_DIR = 'D:\reviewed\profile-seed'
@@ -85,10 +85,10 @@ AIO profile seed 包含大量小文件，安装时仍会受到磁盘和杀毒软
 
 ## 文档
 
-- [BUILDING.md](BUILDING.md)
+- [BUILDING.md](docs/BUILDING.md)
 - [SECURITY.md](SECURITY.md)
 - [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
-- [AUDIT.md](AUDIT.md)
+- [AUDIT.md](docs/AUDIT.md)
 
 ## 许可证
 
