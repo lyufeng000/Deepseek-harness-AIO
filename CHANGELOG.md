@@ -16,6 +16,19 @@ DeepSeek Harness（dsh）的 Windows 桌面客户端：内置独立 Node 运行�
 4.4.0（修复设置页「Skills 与 MCP → 打开目录」失效）→
 4.5.0（本版：内核升级 0.1.1-rc.2 + 内置 dsh-market 社区插件市场）。
 
+## [1.2.1] — 2026-09-10
+
+### 修复：双击后长时间无窗口
+- `seed_distribution_profile` 从建窗之前移入 `boot_chain` 后台线程，双击立即
+  显示 loading 窗口；首次植入（约 3 万文件）不再造成 1-2 分钟无反馈。
+
+### 新增：DeepSeek 实时模型列表
+- 新增内置主机插件 `dsh-aio-live-models`：为内置 `deepseek-official` 注册模型
+  发现，始终请求 `GET {baseURL}/models`，无静态回退；`contextWindow` 默认 256k，
+  失败以可读错误上抛。
+- 受控种子补丁把 `dsh-llm-deepseek` 模型默认 `inputModalities` 改为
+  `["text","image"]`，使实时发现的新模型默认识图；定价仍手动补。
+
 ## [Unreleased] — 2026-09-08
 
 ### 修复：输入时 Composer 工具控件闪烁
