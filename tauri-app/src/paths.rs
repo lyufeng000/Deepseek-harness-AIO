@@ -130,18 +130,22 @@ impl Paths {
     }
 
     /// Install the packaged profile snapshot. Existing AIO homes keep their
-    /// root-level sessions, attachments, provider settings and credentials,
-    /// while the complete desktop profile is replaced instead of inheriting
-    /// old plugins. The old profile remains as a pending-health backup until
-    /// boot calls commit_distribution_profile_seed().
-    pub fn seed_distribution_profile(&self) -> Result<bool, String> {
+    /// root-level sessions, attachments, provider settings and credentials;
+    /// the desktop profile is refreshed onto the packaged dependency closure,
+    /// while user-visible settings (patch rows, plugin config, custom files and
+    /// user-installed packages) are carried over into the new profile. A copy
+    /// of the replaced user bytes is retained under `.aio-user-settings-backup`
+    /// even after boot health commits the swap, so nothing a user changed is
+    /// lost. The old profile remains as a pending-health backup until boot
+    /// calls commit_distribution_profile_seed().
+    pub fn seed_distribution_profile(&self) -> Result<SeedReport, String> {
         let seed = self
             .app_root
             .parent()
             .ok_or_else(|| "resource root is unavailable".to_string())?
             .join("profile-seed");
         if !seed.exists() || self.desktop_profile() != DESKTOP_PROFILE {
-            return Ok(false);
+            return Ok(SeedReport::unchanged());
         }
         let seed_profile = seed.join("profiles").join(DESKTOP_PROFILE);
         if !seed_profile.is_dir() {
@@ -156,7 +160,7 @@ impl Paths {
             write_seed_marker(&marker_file, &ProfileSeedMarker::committed(
                 &self.version, &seed_fingerprint, None,
             ))?;
-            return Ok(true);
+            return Ok(SeedReport::changed());
         }
         ensure_plain_directory(&self.dsh_home)?;
         if let Some(marker) = read_seed_marker(&marker_file)? {
@@ -168,7 +172,7 @@ impl Paths {
                 }
                 // There was no old profile to restore. Keep testing the exact
                 // seed already active and commit it after a healthy boot.
-                return Ok(true);
+                return Ok(SeedReport::changed());
             }
             if marker.state == "committed"
                 && marker.app_version == self.version
@@ -180,7 +184,7 @@ impl Paths {
                         &self.version, &seed_fingerprint, None,
                     ))?;
                 }
-                return Ok(false);
+                return Ok(SeedReport::unchanged());
             }
         }
 
@@ -203,8 +207,29 @@ impl Paths {
             return Err("copied profile seed fingerprint mismatch".into());
         }
         let had_active = active.exists();
+        let mut migration = UserProfileMigration::default();
+        let mut preserved_backup = None;
+        let mut backup_error = None;
         if had_active {
             ensure_plain_directory(&active)?;
+            // 依赖闭包换成发行包的新版本，用户设置字节原样带过去；失败则整
+            // 个候选目录作废，绝不带着半份用户数据激活新 profile。
+            migration = match migrate_user_profile(&active, &candidate) {
+                Ok(migration) => migration,
+                Err(e) => {
+                    let _ = std::fs::remove_dir_all(&candidate);
+                    return Err(format!("preserve user profile settings: {e}"));
+                }
+            };
+            // 快照必须在旧 profile 被改名之前做：健康提交会删掉 pending 备份，
+            // 但这份用户设置副本保留，供修剪后回退查看。
+            preserved_backup = match backup_user_settings(&active, &self.dsh_home) {
+                Ok(name) => Some(name),
+                Err(e) => {
+                    backup_error = Some(e);
+                    None
+                }
+            };
             std::fs::rename(&active, &backup)
                 .map_err(|e| format!("backup {} -> {}: {e}", active.display(), backup.display()))?;
         }
@@ -226,7 +251,14 @@ impl Paths {
             return Err(e);
         }
         clear_legacy_plugin_preferences(&self.settings_file())?;
-        Ok(true)
+        Ok(SeedReport {
+            changed: true,
+            preserved_files: migration.files.len(),
+            preserved_packages: migration.packages.len(),
+            preserved_backup,
+            backup_error,
+            skipped: migration.skipped,
+        })
     }
 
     /// Commit a profile replacement only after dsh web has passed startup
@@ -288,6 +320,297 @@ fn seed_home_is_empty(home: &std::path::Path) -> Result<bool, String> {
     }
 }
 
+/// profile 内属于依赖闭包 / 包管理器状态的条目：更新时始终换成发行包的新版本。
+const PROFILE_DEPENDENCY_ARTIFACTS: [&str; 4] =
+    ["node_modules", ".dsh-module-fallback", "pnpm-lock.yaml", "pnpm-workspace.yaml"];
+/// 用户设置快照目录（在 dsh_home 下，隐藏；不随健康提交删除）。
+const USER_SETTINGS_BACKUP_DIR: &str = ".aio-user-settings-backup";
+
+/// 发行包 profile 植入结果。
+pub struct SeedReport {
+    /// false = 本次启动无需替换（版本与 seed 指纹都已生效）。
+    pub changed: bool,
+    /// 从旧 profile 迁移过来的用户设置条目数。
+    pub preserved_files: usize,
+    /// 从旧 profile 迁移过来的用户新增包数。
+    pub preserved_packages: usize,
+    /// 用户设置快照目录名（相对 dsh_home）；备份失败时为 None。
+    pub preserved_backup: Option<String>,
+    /// 用户设置快照失败原因（不阻断启动，仅供日志）。
+    pub backup_error: Option<String>,
+    /// 迁移时跳过的条目（链接等），供日志提示。
+    pub skipped: Vec<String>,
+}
+
+impl SeedReport {
+    fn unchanged() -> Self {
+        Self {
+            changed: false,
+            preserved_files: 0,
+            preserved_packages: 0,
+            preserved_backup: None,
+            backup_error: None,
+            skipped: Vec::new(),
+        }
+    }
+    fn changed() -> Self {
+        Self { changed: true, ..Self::unchanged() }
+    }
+}
+
+#[derive(Default)]
+struct UserProfileMigration {
+    files: Vec<String>,
+    packages: Vec<String>,
+    skipped: Vec<String>,
+}
+
+fn read_profile_json(file: &std::path::Path) -> Option<serde_json::Value> {
+    let text = std::fs::read_to_string(file).ok()?;
+    serde_json::from_str(text.trim_start_matches('\u{feff}')).ok()
+}
+
+fn write_profile_json(file: &std::path::Path, value: &serde_json::Value) -> Result<(), String> {
+    let mut bytes = serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?;
+    bytes.push(b'\n');
+    std::fs::write(file, bytes).map_err(|e| format!("write {}: {e}", file.display()))
+}
+
+/// 合并 profile manifest：依赖与 overrides 以发行包闭包为准，用户额外安装的包 /
+/// 覆盖项、以及用户自选的 bundles 原样保留。
+fn merge_profile_manifest(
+    seed: &serde_json::Value,
+    user: Option<&serde_json::Value>,
+) -> serde_json::Value {
+    use serde_json::Value;
+    let mut out = seed.clone();
+    let Some(user) = user.and_then(Value::as_object) else { return out };
+    let Some(object) = out.as_object_mut() else { return out };
+    for section in ["dependencies", "overrides"] {
+        let Some(user_section) = user.get(section).and_then(Value::as_object) else { continue };
+        let entry = object
+            .entry(section.to_string())
+            .or_insert_with(|| Value::Object(Default::default()));
+        let Some(target) = entry.as_object_mut() else { continue };
+        for (name, spec) in user_section {
+            if !target.contains_key(name) {
+                target.insert(name.clone(), spec.clone());
+            }
+        }
+    }
+    let user_bundles = user
+        .get("dsh")
+        .and_then(|dsh| dsh.get("profile"))
+        .and_then(|profile| profile.get("bundles"))
+        .and_then(Value::as_array);
+    if let Some(user_bundles) = user_bundles {
+        let mut bundles = seed
+            .get("dsh")
+            .and_then(|dsh| dsh.get("profile"))
+            .and_then(|profile| profile.get("bundles"))
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        for name in user_bundles {
+            if !bundles.contains(name) {
+                bundles.push(name.clone());
+            }
+        }
+        let dsh = object
+            .entry("dsh".to_string())
+            .or_insert_with(|| Value::Object(Default::default()));
+        if let Some(dsh) = dsh.as_object_mut() {
+            let profile = dsh
+                .entry("profile".to_string())
+                .or_insert_with(|| Value::Object(Default::default()));
+            if let Some(profile) = profile.as_object_mut() {
+                profile.insert("bundles".to_string(), Value::Array(bundles));
+            }
+        }
+    }
+    out
+}
+
+/// 递归复制用户字节：覆盖同名发行文件、合并目录；链接与特殊文件跳过并记录。
+fn copy_user_entry(
+    source: &std::path::Path,
+    destination: &std::path::Path,
+    migration: &mut UserProfileMigration,
+) -> Result<(), String> {
+    let meta = std::fs::symlink_metadata(source)
+        .map_err(|e| format!("inspect {}: {e}", source.display()))?;
+    if meta.file_type().is_symlink() {
+        migration.skipped.push(format!("{}（链接，未迁移）", source.display()));
+        return Ok(());
+    }
+    if meta.is_dir() {
+        std::fs::create_dir_all(destination)
+            .map_err(|e| format!("create {}: {e}", destination.display()))?;
+        for entry in std::fs::read_dir(source)
+            .map_err(|e| format!("read {}: {e}", source.display()))?
+        {
+            let entry = entry.map_err(|e| format!("read entry in {}: {e}", source.display()))?;
+            copy_user_entry(&entry.path(), &destination.join(entry.file_name()), migration)?;
+        }
+        Ok(())
+    } else if meta.is_file() {
+        if let Some(parent) = destination.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("create {}: {e}", parent.display()))?;
+        }
+        std::fs::copy(source, destination)
+            .map_err(|e| format!("copy {} -> {}: {e}", source.display(), destination.display()))?;
+        Ok(())
+    } else {
+        migration.skipped.push(source.display().to_string());
+        Ok(())
+    }
+}
+
+/// node_modules 里的包名（scoped 展开为 `@scope/name`）。
+fn installed_package_names(root: &std::path::Path) -> Vec<String> {
+    let mut out = Vec::new();
+    let Ok(entries) = std::fs::read_dir(root) else { return out };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') {
+            continue;
+        }
+        if name.starts_with('@') {
+            if let Ok(children) = std::fs::read_dir(entry.path()) {
+                for child in children.flatten() {
+                    let child_name = child.file_name().to_string_lossy().to_string();
+                    if !child_name.starts_with('.') {
+                        out.push(format!("{name}/{child_name}"));
+                    }
+                }
+            }
+        } else {
+            out.push(name);
+        }
+    }
+    out
+}
+
+/// 用户自己装的包（发行包闭包里没有的）连同其 hoisted 依赖一起搬到新 profile：
+/// manifest 里保留下来的用户依赖若指向不存在的目录，dsh 启动会失败。
+fn migrate_user_packages(
+    active_modules: &std::path::Path,
+    candidate_modules: &std::path::Path,
+    migration: &mut UserProfileMigration,
+) -> Result<(), String> {
+    if !active_modules.is_dir() {
+        return Ok(());
+    }
+    for name in installed_package_names(active_modules) {
+        let relative: PathBuf = name.split('/').collect();
+        let destination = candidate_modules.join(&relative);
+        if destination.exists() {
+            continue; // 发行包闭包优先
+        }
+        let source = active_modules.join(&relative);
+        if std::fs::symlink_metadata(&source)
+            .map(|meta| meta.file_type().is_symlink())
+            .unwrap_or(false)
+        {
+            migration.skipped.push(format!("{name}（链接，未迁移）"));
+            continue;
+        }
+        copy_user_entry(&source, &destination, migration)?;
+        migration.packages.push(name);
+    }
+    Ok(())
+}
+
+/// 把旧 profile 的用户字节搬进候选 profile：除依赖产物外全部保留，manifest 合并。
+fn migrate_user_profile(
+    active: &std::path::Path,
+    candidate: &std::path::Path,
+) -> Result<UserProfileMigration, String> {
+    ensure_plain_directory(active)?;
+    ensure_plain_directory(candidate)?;
+    let mut migration = UserProfileMigration::default();
+    for entry in std::fs::read_dir(active).map_err(|e| format!("read {}: {e}", active.display()))? {
+        let entry = entry.map_err(|e| format!("read entry in {}: {e}", active.display()))?;
+        let name = entry.file_name().to_string_lossy().to_string();
+        if PROFILE_DEPENDENCY_ARTIFACTS.contains(&name.as_str()) {
+            continue;
+        }
+        let target = candidate.join(&name);
+        if name == "package.json" {
+            let user = read_profile_json(&entry.path());
+            let seed = read_profile_json(&target);
+            let merged = match (seed, user) {
+                (Some(seed), Some(user)) if seed.is_object() => {
+                    merge_profile_manifest(&seed, Some(&user))
+                }
+                (Some(seed), _) if seed.is_object() => seed,
+                (_, Some(user)) => user,
+                (Some(_), None) => {
+                    // 发行包 manifest 不是对象：保留候选目录里的原文件。
+                    migration.skipped.push("package.json（发行包 manifest 非对象，保留原文件）".to_string());
+                    continue;
+                }
+                (None, None) => {
+                    migration.skipped.push("package.json（无法解析，未迁移）".to_string());
+                    continue;
+                }
+            };
+            write_profile_json(&target, &merged)?;
+            migration.files.push(name);
+            continue;
+        }
+        copy_user_entry(&entry.path(), &target, &mut migration)?;
+        migration.files.push(name);
+    }
+    migrate_user_packages(
+        &active.join("node_modules"),
+        &candidate.join("node_modules"),
+        &mut migration,
+    )?;
+    Ok(migration)
+}
+
+/// 把被替换掉的用户设置复制到 dsh_home 下的隐藏快照目录（只保留最近一份）。
+/// 健康提交会删除旧 profile 备份，但这份用户设置副本保留，供修剪后回退查看。
+fn backup_user_settings(active: &std::path::Path, home: &std::path::Path) -> Result<String, String> {
+    let destination = home.join(USER_SETTINGS_BACKUP_DIR);
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    let staging = home.join(format!("{USER_SETTINGS_BACKUP_DIR}-{}-{nonce}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&staging);
+    std::fs::create_dir_all(&staging).map_err(|e| format!("create {}: {e}", staging.display()))?;
+    let mut snapshot = UserProfileMigration::default();
+    let mut names: Vec<String> = Vec::new();
+    for entry in std::fs::read_dir(active).map_err(|e| format!("read {}: {e}", active.display()))? {
+        let entry = entry.map_err(|e| format!("read entry in {}: {e}", active.display()))?;
+        let name = entry.file_name().to_string_lossy().to_string();
+        if PROFILE_DEPENDENCY_ARTIFACTS.contains(&name.as_str()) {
+            continue;
+        }
+        copy_user_entry(&entry.path(), &staging.join(&name), &mut snapshot)?;
+        names.push(name);
+    }
+    let manifest = serde_json::json!({
+        "schema": 1,
+        "profile": DESKTOP_PROFILE,
+        "entries": names,
+        "skipped": snapshot.skipped,
+    });
+    write_profile_json(&staging.join("manifest.json"), &manifest)?;
+    if destination.exists() {
+        ensure_plain_directory(&destination)?;
+        let _ = std::fs::remove_dir_all(&destination);
+    }
+    std::fs::rename(&staging, &destination)
+        .map_err(|e| format!("activate {} -> {}: {e}", staging.display(), destination.display()))?;
+    Ok(USER_SETTINGS_BACKUP_DIR.to_string())
+}
+
+/// 只清理废弃的内部迁移标记；用户可见偏好（removedPlugins、pluginAutoUpdate、
+/// legacySkinChoice）一律保留：升级程序不得覆盖用户设置。
 fn clear_legacy_plugin_preferences(file: &std::path::Path) -> Result<(), String> {
     if !file.exists() {
         return Ok(());
@@ -295,8 +618,7 @@ fn clear_legacy_plugin_preferences(file: &std::path::Path) -> Result<(), String>
     let mut settings = crate::settings::load_at(file);
     let Some(object) = settings.as_object_mut() else { return Ok(()) };
     let mut changed = false;
-    for key in ["removedPlugins", "pluginAutoUpdate", "shareWebProfile",
-        "desktopProfileMigrated", "legacySkinChoice"] {
+    for key in ["shareWebProfile", "desktopProfileMigrated"] {
         changed |= object.remove(key).is_some();
     }
     if changed {
@@ -536,51 +858,106 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
-    #[test]
-    fn existing_home_inherits_sessions_and_providers_but_not_old_profile_plugins() {
+        #[test]
+    fn existing_home_inherits_sessions_providers_and_user_profile_settings() {
         let root = test_root("clean-profile");
         let paths = test_paths(&root);
         let seed_home = root.join("resources/profile-seed");
         write_file(&seed_home, "settings.yaml", b"public-default: true\n");
-        write_file(&seed_home, "profiles/web-desktop/package.json", b"{\"name\":\"new-profile\"}\n");
+        write_file(&seed_home, "profiles/web-desktop/package.json",
+            br#"{"name":"new-profile","dependencies":{"new-plugin":"1.0.0"},"dsh":{"profile":{"bundles":["new-plugin"]}}}"#);
+        write_file(&seed_home, "profiles/web-desktop/cordis.yml", b"[]\n");
         write_file(&seed_home, "profiles/web-desktop/node_modules/new-plugin/index.js", b"new\n");
         write_file(&paths.dsh_home, "settings.yaml", b"provider: private\n");
         write_file(&paths.dsh_home, ".credentials.yaml", b"apiKey: synthetic\n");
         write_file(&paths.dsh_home, "sessions/a/events.jsonl", b"private session\n");
         write_file(&paths.dsh_home, "attachments/v1/a", &[0, 1, 255]);
-        write_file(&paths.dsh_home, "profiles/web-desktop/package.json", b"{\"name\":\"old-profile\"}\n");
+        write_file(&paths.dsh_home, "profiles/web-desktop/package.json",
+            br#"{"name":"old-profile","dependencies":{"old-plugin":"2.0.0"},"dsh":{"profile":{"bundles":["old-plugin","dsh-meme"]}}}"#);
+        write_file(&paths.dsh_home, "profiles/web-desktop/cordis.yml", b"# user profile root\n[]\n");
+        write_file(&paths.dsh_home, "profiles/web-desktop/cordis.patch.yml",
+            b"- insert:\n    - id: old-plugin\n      name: 'old-plugin'\n");
         write_file(&paths.dsh_home, "profiles/web-desktop/node_modules/old-plugin/index.js", b"old\n");
+        write_file(&paths.dsh_home, "profiles/web-desktop/node_modules/@scope/user-plugin/index.js", b"user\n");
         write_file(&paths.dsh_home, "plugin-artifact-cache/old-plugin/lib/index.js", b"old cache\n");
         write_file(&paths.user_data, "settings.json",
             br#"{"exitAction":"minimize","removedPlugins":["balance"],"pluginAutoUpdate":true,"shareWebProfile":true,"legacySkinChoice":"ui-skin-old"}"#);
 
-        assert!(paths.seed_distribution_profile().unwrap());
+        let report = paths.seed_distribution_profile().unwrap();
+        assert!(report.changed);
+        assert!(report.preserved_files >= 2, "package.json 与用户配置文件都要迁移");
+        assert!(report.preserved_packages >= 2, "用户包（含 scoped）都要迁移");
+        assert_eq!(report.preserved_backup.as_deref(), Some(USER_SETTINGS_BACKUP_DIR));
+
+        // 根级用户数据照旧继承。
         assert_eq!(std::fs::read(paths.dsh_home.join("settings.yaml")).unwrap(), b"provider: private\n");
         assert_eq!(std::fs::read(paths.dsh_home.join(".credentials.yaml")).unwrap(), b"apiKey: synthetic\n");
         assert_eq!(std::fs::read(paths.dsh_home.join("sessions/a/events.jsonl")).unwrap(), b"private session\n");
         assert_eq!(std::fs::read(paths.dsh_home.join("attachments/v1/a")).unwrap(), [0, 1, 255]);
-        assert_eq!(std::fs::read(paths.dsh_home.join("profiles/web-desktop/package.json")).unwrap(),
-            b"{\"name\":\"new-profile\"}\n");
-        assert!(!paths.dsh_home.join("profiles/web-desktop/node_modules/old-plugin").exists());
+
+        // 用户可编辑的 profile 文件原样保留，不被发行包默认值覆盖。
+        assert_eq!(
+            std::fs::read(paths.dsh_home.join("profiles/web-desktop/cordis.patch.yml")).unwrap(),
+            b"- insert:\n    - id: old-plugin\n      name: 'old-plugin'\n"
+        );
+        assert_eq!(
+            std::fs::read(paths.dsh_home.join("profiles/web-desktop/cordis.yml")).unwrap(),
+            b"# user profile root\n[]\n"
+        );
+
+        // manifest：发行包依赖为底，用户额外依赖与自选 bundles 保留。
+        let manifest = read_profile_json(&paths.dsh_home.join("profiles/web-desktop/package.json")).unwrap();
+        assert_eq!(manifest["name"].as_str(), Some("new-profile"));
+        assert_eq!(manifest["dependencies"]["new-plugin"].as_str(), Some("1.0.0"));
+        assert_eq!(manifest["dependencies"]["old-plugin"].as_str(), Some("2.0.0"));
+        let bundles: Vec<&str> = manifest["dsh"]["profile"]["bundles"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|value| value.as_str())
+            .collect();
+        assert_eq!(bundles, vec!["new-plugin", "old-plugin", "dsh-meme"]);
+
+        // 依赖闭包用发行包版本；用户自装的包不被丢弃。
+        assert!(paths.dsh_home.join("profiles/web-desktop/node_modules/new-plugin/index.js").is_file());
+        assert!(paths.dsh_home.join("profiles/web-desktop/node_modules/old-plugin/index.js").is_file());
+        assert!(paths.dsh_home.join("profiles/web-desktop/node_modules/@scope/user-plugin/index.js").is_file());
+
+        // 用户设置快照在健康提交后仍然保留。
+        let snapshot = paths.dsh_home.join(USER_SETTINGS_BACKUP_DIR);
+        assert!(snapshot.join("manifest.json").is_file());
+        assert!(snapshot.join("cordis.patch.yml").is_file());
+        assert!(snapshot.join("cordis.yml").is_file());
+        assert!(snapshot.join("package.json").is_file());
+
+        // 旧 profile 备份仍按原语义在健康提交后清理。
         let pending = read_seed_marker(&paths.dsh_home.join(PROFILE_SEED_MARKER)).unwrap().unwrap();
         assert_eq!(pending.state, "pending-health");
         let backup = paths.dsh_home.join("profiles").join(pending.backup_name.as_ref().unwrap());
         assert!(backup.join("node_modules/old-plugin/index.js").is_file());
+
+        // 用户可见应用设置保留；只清理废弃的内部迁移标记。
         let app_settings = crate::settings::load_at(&paths.settings_file());
         assert_eq!(app_settings.get("exitAction").and_then(|v| v.as_str()), Some("minimize"));
-        for key in ["removedPlugins", "pluginAutoUpdate", "shareWebProfile", "legacySkinChoice"] {
-            assert!(app_settings.get(key).is_none(), "{key} must not be inherited");
-        }
+        assert_eq!(
+            app_settings.get("removedPlugins").and_then(|v| v.as_array()).map(|list| list.len()),
+            Some(1)
+        );
+        assert_eq!(app_settings.get("pluginAutoUpdate").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(app_settings.get("legacySkinChoice").and_then(|v| v.as_str()), Some("ui-skin-old"));
+        assert!(app_settings.get("shareWebProfile").is_none());
 
         assert!(paths.commit_distribution_profile_seed().unwrap());
         assert!(!backup.exists());
+        assert!(snapshot.join("cordis.patch.yml").is_file());
         assert!(!paths.dsh_home.join("plugin-artifact-cache").exists());
         let committed = read_seed_marker(&paths.dsh_home.join(PROFILE_SEED_MARKER)).unwrap().unwrap();
         assert_eq!(committed.state, "committed");
         assert!(committed.backup_name.is_none());
-        assert!(!paths.seed_distribution_profile().unwrap());
+        assert!(!paths.seed_distribution_profile().unwrap().changed);
         std::fs::remove_dir_all(root).unwrap();
     }
+
 
     #[test]
     fn interrupted_profile_seed_restores_old_profile_on_next_launch() {
@@ -592,7 +969,7 @@ mod tests {
         write_file(&paths.dsh_home, "settings.yaml", b"provider: private\n");
         write_file(&paths.dsh_home, "profiles/web-desktop/package.json", b"{\"name\":\"old-profile\"}\n");
 
-        assert!(paths.seed_distribution_profile().unwrap());
+        assert!(paths.seed_distribution_profile().unwrap().changed);
         assert!(paths.seed_distribution_profile().is_err());
         assert_eq!(std::fs::read(paths.dsh_home.join("profiles/web-desktop/package.json")).unwrap(),
             b"{\"name\":\"old-profile\"}\n");
@@ -609,7 +986,7 @@ mod tests {
         write_file(&seed_home, "settings.yaml", b"public-default: true\n");
         write_file(&seed_home, "profiles/web-desktop/package.json", b"{\"name\":\"new-profile\"}\n");
 
-        assert!(paths.seed_distribution_profile().unwrap());
+        assert!(paths.seed_distribution_profile().unwrap().changed);
         assert_eq!(std::fs::read(paths.dsh_home.join("settings.yaml")).unwrap(), b"public-default: true\n");
         let marker = read_seed_marker(&paths.dsh_home.join(PROFILE_SEED_MARKER)).unwrap().unwrap();
         assert_eq!(marker.state, "committed");

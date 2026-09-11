@@ -1051,8 +1051,28 @@ fn boot_chain(state: &Arc<AppState>) {
     // 启动链的最前面但晚于建窗，保证双击后立即有 loading 窗口反馈；必须在 sidecar
     // 启动与 profile.migrateAndSync 之前完成。
     match paths.seed_distribution_profile() {
-        Ok(true) => state.log.log("boot", "已植入发行包内的插件与技能快照"),
-        Ok(false) => {}
+        Ok(report) if report.changed => {
+            state.log.log(
+                "boot",
+                &format!(
+                    "已植入发行包内的插件与技能快照（保留用户设置 {} 项、用户包 {} 个{}）",
+                    report.preserved_files,
+                    report.preserved_packages,
+                    report
+                        .preserved_backup
+                        .as_deref()
+                        .map(|name| format!("，快照: {name}"))
+                        .unwrap_or_default()
+                ),
+            );
+            for item in report.skipped.iter().take(5) {
+                state.log.log("boot", &format!("profile 迁移跳过: {item}"));
+            }
+            if let Some(error) = report.backup_error.as_deref() {
+                state.log.log("boot", &format!("用户设置快照失败: {error}"));
+            }
+        }
+        Ok(_) => {}
         Err(e) => state.log.log("boot", &format!("插件与技能快照植入失败: {e}")),
     }
 

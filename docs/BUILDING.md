@@ -84,6 +84,7 @@ dist/
 - 便携 ZIP 必须包含 `DSHEAC AIO.exe`、`.dsh-portable`、`resources\node\node.exe`、`resources\profile-seed\profiles\web-desktop\package.json`。
 - `-Verify` 会调用 `scripts/verify-aio-installer.ps1`：安装到含中文/空格的独立目录，隔离数据首启，确认服务端口属于本轮进程树，检查 seed 隐私排除，静默卸载并检查进程/端口/目录/注册表残留。报告写入 `verification\verification-*.json`，`result` 必须为 `PASS`。
 - `npm run dist`（`build-aio-release.ps1` → `build-aio-package.ps1 -FullTest`）在打包前运行全量 JS 与 Rust 测试，并先执行 `scripts/prepare-test-fixtures.mjs`。
+- 覆盖安装或应用内更新到已有 home 后，确认 `dsh_home\.aio-user-settings-backup\manifest.json` 存在，且 `profiles\web-desktop` 内仍保留用户改过的 `cordis.patch.yml` 与用户自装包；引用已退场包的 patch 行应在启动前被清理并记入 `.aio-profile-migration.json`。
 
 ## 性能基准（本地实测）
 

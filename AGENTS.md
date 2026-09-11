@@ -144,6 +144,7 @@ npm run build-inputs:package
 - 完整测试依赖审核夹具。夹具缺失时 `requireFixture` 会阻断，不能靠跳过获得“全绿”。
 - `zod@4.4.3` 官方测试文件的审核哈希以版本、路径、字节明确的 alternate 形式声明在 `scripts/public-seed-reviewed-content.mjs`；不得为绕过失败放宽扫描或永久改写审核哈希。
 - 更新事务对安装器 edition 只恢复程序文件与用户数据；NSIS 注册表/快捷方式副作用与 machine-scope 提权尚未做完整回滚，见 `docs/BUILDING.md` 与体检报告。
+- 远程更新（应用内更新/覆盖安装）刷新 profile 依赖闭包时必须保留用户设置：`cordis.patch.yml` 等用户文件与用户自装包迁入新 profile，被替换的用户字节另存 `dsh_home\.aio-user-settings-backup\`（健康提交后保留最近一份）；引用已退场包的 patch 行/bundle 由 sidecar 在 dsh 启动前清理，明细留档 `.aio-profile-migration.json`。改动该行为需同步 `tauri-app/src/paths.rs`、`sidecar/src/desktop-core.ts`、`sidecar/src/lib/plugin-manager-patch.ts` 与 `test/patch-prune.test.mjs`。
 - 上游 WebUI 代码包含 `D:\AI\Dsh` 相关默认路径文本；公开发布前应单独审计和清理。
 - 当前 `setup.exe` 未进行代码签名，Windows SmartScreen 可能提示未知发布者。
 - 未获得用户明确授权时，不执行 commit、push、创建 PR、打标签或发布。

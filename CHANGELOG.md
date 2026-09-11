@@ -16,6 +16,26 @@ DeepSeek Harness（dsh）的 Windows 桌面客户端：内置独立 Node 运行�
 4.4.0（修复设置页「Skills 与 MCP → 打开目录」失效）→
 4.5.0（本版：内核升级 0.1.1-rc.2 + 内置 dsh-market 社区插件市场）。
 
+## [Unreleased]
+
+### 修复：远程更新不再覆盖用户设置
+- 应用内更新或覆盖安装后首次启动替换 desktop profile 时，不再整目录丢弃用户字节：
+  - 依赖闭包（`node_modules`、`pnpm-lock.yaml`、`pnpm-workspace.yaml`）换成发行包的
+    新版本；
+  - 用户可编辑的 profile 文件（`cordis.patch.yml`、`cordis.yml`、插件目录里的用户
+    数据等）原样迁移；`package.json` 以新闭包为底合并用户额外依赖与自选 bundles；
+  - 用户自己安装的包（含 scoped 包与 hoisted 依赖）一并迁移，避免保留下来的依赖
+    指向不存在的目录。
+- 被替换掉的用户字节另存到 `dsh_home/.aio-user-settings-backup/`（含 `manifest.json`），
+  启动健康提交后不再删除，只保留最近一份，可随时回退查看。
+- patch 行或 bundle 引用的包在新闭包中已退场时，由 sidecar 在 dsh 启动前按退场规则
+  清理：原文备份到同一目录（`cordis.patch.yml.pre-prune.bak`、
+  `package.json.pre-prune.bak`），明细写入 `dsh_home/.aio-profile-migration.json`。
+- `userData/settings.json` 不再清理用户可见键（`removedPlugins`、`pluginAutoUpdate`、
+  `legacySkinChoice`）；只清理废弃的内部迁移标记（`shareWebProfile`、
+  `desktopProfileMigrated`）。
+- 迁移失败时整个候选目录作废并保持旧 profile 可用，不会带着半份用户数据激活新版本。
+
 ## [1.3.0] — 2026-09-11
 
 ### 变更：图片解析交还原生多模态模型

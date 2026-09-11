@@ -21,7 +21,7 @@ import { healProfileModuleShadowing } from './lib/profile-module-heal';
 import { createGuard } from './lib/plugin-guard';
 import { configLinesFor, removeBundledRowDuplicates, collectBundleEntryIds } from './lib/patch-row-heal';
 import { syncBundledPresets, ensureDefaultAgentPreset } from './lib/preset-sync';
-import { togglePluginInPatch, ensurePluginDisabledInPatch, removePluginFromPatch, hasEntryId } from './lib/plugin-manager-patch';
+import { togglePluginInPatch, ensurePluginDisabledInPatch, removePluginFromPatch, hasEntryId, packageNameOf, pruneUnavailableRows, pruneUnavailableBundles } from './lib/plugin-manager-patch';
 import { collectPluginRows } from './lib/plugin-manager-state';
 import { removeMarketDuplicate } from './lib/builtin-collision';
 import { assertProfileStartup, UPGRADE_TARGET } from './lib/profile-upgrade';
@@ -339,6 +339,103 @@ export function createDesktopCore(ctx: DesktopCoreCtx) {
     }
   }
 
+  // ------------------------------------------- 失效插件引用修剪（远程更新）--
+
+  /// 当前 profile 可用的插件包名：内置插件 + manifest 依赖 + node_modules 实际内容。
+  function availablePluginNames(profileDirP: string): Set<string> {
+    const names = new Set<string>();
+    for (const entry of COMPANION_PLUGINS) names.add(entry.name);
+    const manifest = readJsonFile(path.join(profileDirP, 'package.json'));
+    const dependencies = manifest && typeof manifest.dependencies === 'object' ? manifest.dependencies : {};
+    for (const name of Object.keys(dependencies)) names.add(name);
+    const addDirectory = (directory: string, prefix: string): void => {
+      let entries: fs.Dirent[] = [];
+      try {
+        entries = fs.readdirSync(directory, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (entry.name.startsWith('.')) continue;
+        if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+        if (entry.name.startsWith('@')) addDirectory(path.join(directory, entry.name), entry.name + '/');
+        else names.add(prefix + entry.name);
+      }
+    };
+    addDirectory(path.join(profileDirP, 'node_modules'), '');
+    return names;
+  }
+
+  /// 剔除 manifest 里指向不存在包的 bundle（bundle 缺包会让 dsh 直接起不来）。
+  function pruneProfileBundles(profileDirP: string, available: Set<string>): string[] {
+    const manifestFile = path.join(profileDirP, 'package.json');
+    const manifest = readJsonFile(manifestFile);
+    if (!manifest || typeof manifest !== 'object') return [];
+    const profile = manifest.dsh?.profile;
+    if (!profile) return [];
+    const result = pruneUnavailableBundles(profile.bundles, available);
+    if (!result.removed.length) return [];
+    profile.bundles = result.kept;
+    fs.writeFileSync(manifestFile, JSON.stringify(manifest, null, 2) + '\n');
+    return result.removed;
+  }
+
+  /// 修剪 patch 行与 bundle 清单里已退场的引用；原文备到用户设置快照目录，
+  /// 明细写入 .aio-profile-migration.json，保证可回退查看。
+  function pruneUnavailablePluginRows(profileDirP: string): void {
+    try {
+      const patchFile = path.join(profileDirP, 'cordis.patch.yml');
+      const manifestFile = path.join(profileDirP, 'package.json');
+      let patch = '';
+      let manifestText = '';
+      try {
+        patch = fs.readFileSync(patchFile, 'utf8');
+      } catch {
+        patch = '';
+      }
+      try {
+        manifestText = fs.readFileSync(manifestFile, 'utf8');
+      } catch {
+        manifestText = '';
+      }
+      const available = availablePluginNames(profileDirP);
+      const result = patch
+        ? pruneUnavailableRows(patch, available)
+        : { patch, pruned: [] as { id: string; name: string }[] };
+      const removedBundles = pruneProfileBundles(profileDirP, available);
+      if (!result.pruned.length && !removedBundles.length) return;
+      const backupDir = path.join(dshHome, '.aio-user-settings-backup');
+      try {
+        fs.mkdirSync(backupDir, { recursive: true });
+        if (patch) fs.writeFileSync(path.join(backupDir, 'cordis.patch.yml.pre-prune.bak'), patch);
+        if (manifestText) fs.writeFileSync(path.join(backupDir, 'package.json.pre-prune.bak'), manifestText);
+      } catch (err) {
+        log('boot', '写入失效引用备份失败: ' + (err instanceof Error ? err.message : String(err)));
+      }
+      if (result.pruned.length) fs.writeFileSync(patchFile, result.patch);
+      const reportFile = path.join(dshHome, '.aio-profile-migration.json');
+      const previous = (readJsonFile(reportFile) || {}) as Record<string, any>;
+      const now = new Date().toISOString();
+      const report = {
+        schema: 1,
+        updatedAt: now,
+        prunedRows: [
+          ...(Array.isArray(previous.prunedRows) ? previous.prunedRows : []),
+          ...result.pruned.map((row) => ({ ...row, at: now })),
+        ],
+        removedBundles: [
+          ...(Array.isArray(previous.removedBundles) ? previous.removedBundles : []),
+          ...removedBundles.map((name) => ({ name, at: now })),
+        ],
+      };
+      fs.writeFileSync(reportFile, JSON.stringify(report, null, 2) + '\n');
+      log('boot', '已按退场规则注释失效 patch 行 ' + result.pruned.length
+        + ' 条、移除失效 bundle ' + removedBundles.length + ' 个（原文备份见 .aio-user-settings-backup）');
+    } catch (err) {
+      log('boot', '修剪失效插件引用失败（保持原样）: ' + (err instanceof Error ? err.message : String(err)));
+    }
+  }
+
   function syncCompanionPluginsOnce(): void {
     // 桌面专属 profile 必须先存在（未知 profile 不会被 dsh 自动初始化）。
     ensureDesktopProfileInit();
@@ -416,6 +513,9 @@ export function createDesktopCore(ctx: DesktopCoreCtx) {
     } catch (err) {
       log('boot', '写入内置插件清单失败: ' + (err instanceof Error ? err.message : String(err)));
     }
+    // 远程更新换掉了依赖闭包：用户 patch 若还引用已退场的包，dsh 会因缺包
+    // 起不来。这里按退场规则注释失效行、剔除失效 bundle，并备份原文。
+    pruneUnavailablePluginRows(profileDirP);
     // 注册到 profile 的 patch 层（幂等：已有行不重写）。
     const patchFile = path.join(profileDirP, 'cordis.patch.yml');
     let patch = '';

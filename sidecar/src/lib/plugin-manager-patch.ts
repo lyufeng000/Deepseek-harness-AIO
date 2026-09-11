@@ -231,3 +231,122 @@ export function hasEntryId(text: string, id: string): boolean {
   const escapedId = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp('id:\\s*' + escapedId + '(?![A-Za-z0-9_.-])').test(text);
 }
+
+/** 包名归属：`@scope/name/子路径` → `@scope/name`，`name/子路径` → `name`。 */
+export function packageNameOf(reference: string): string {
+  const parts = String(reference).split('/');
+  if (reference.startsWith('@')) return parts.slice(0, 2).join('/');
+  return parts[0] || reference;
+}
+
+/** 去掉 YAML 单/双引号包裹。 */
+function unquote(value: string): string {
+  const trimmed = value.trim();
+  const single = trimmed.startsWith("'") && trimmed.endsWith("'");
+  const double = trimmed.startsWith('"') && trimmed.endsWith('"');
+  if (single || double) {
+    const body = trimmed.slice(1, -1);
+    return single ? body.replace(/''/g, "'") : body.replace(/\\"/g, '"');
+  }
+  return trimmed;
+}
+
+export interface PrunedRow {
+  id: string;
+  name: string;
+}
+
+/**
+ * 更新（发行包替换）换掉依赖闭包后，patch 里引用已不存在的包会让 dsh 因缺包失败。
+ * 这里按退场规则删除整条块（原文留在调用方的 `.pre-prune.bak` 备份里），并返回
+ * 被删除的条目清单供留档；子项被删空的 `- insert:` 头行一并清理。
+ *
+ * 只处理能确定包名归属的条目：name 是相对/绝对路径的条目、缺 name 的裸条目
+ * 一律保留；available 由调用方按 profile 实际内容（闭包 + 用户依赖）构建。
+ */
+export function pruneUnavailableRows(
+  text: string,
+  available: Iterable<string>,
+): { patch: string; pruned: PrunedRow[] } {
+  if (typeof text !== 'string' || text === '') {
+    return { patch: typeof text === 'string' ? text : '', pruned: [] };
+  }
+  const names = available instanceof Set ? (available as Set<string>) : new Set(available);
+  const { bom, lines } = readPatch(text);
+  const drops: { start: number; end: number }[] = [];
+  const pruned: PrunedRow[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const start = /^([ \t]*)- id:[ \t]*([A-Za-z0-9_.-]+)[ \t]*(?:#.*)?$/.exec(lineText(lines[i]!));
+    if (!start) continue;
+    const indent = start[1]!.length;
+    let end = i + 1;
+    while (end < lines.length) {
+      const [, ws, rest] = LEADING.exec(lineText(lines[end]!))!;
+      if (!rest || ws!.length <= indent) break;
+      end += 1;
+    }
+    let name: string | null = null;
+    for (let k = i + 1; k < end; k++) {
+      const match = /^[ \t]+name[ \t]*:[ \t]*(.+?)[ \t]*$/.exec(lineText(lines[k]!));
+      if (match && match[1]) {
+        name = unquote(match[1]);
+        break;
+      }
+    }
+    if (!name || /^[./\\]/.test(name) || names.has(packageNameOf(name))) {
+      i = end - 1;
+      continue;
+    }
+    drops.push({ start: i, end });
+    pruned.push({ id: start[2]!, name });
+    i = end - 1;
+  }
+  if (!drops.length) return { patch: text, pruned: [] };
+  for (const drop of drops.slice().sort((a, b) => b.start - a.start)) {
+    lines.splice(drop.start, drop.end - drop.start);
+  }
+  // 子项被删空的 `- insert:` 头行一并清理（与插件管理的删除语义一致）。
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const header = /^([ \t]*)- insert:[ \t]*$/.exec(lineText(lines[i]!));
+    if (!header) continue;
+    const indent = header[1]!.length;
+    let j = i + 1;
+    let child = false;
+    while (j < lines.length) {
+      const bare = lineText(lines[j]!);
+      const [, ws, rest] = LEADING.exec(bare)!;
+      if (!rest) break;
+      if (ws!.length <= indent) break;
+      if (/^[ \t]*- /.test(bare)) {
+        child = true;
+        break;
+      }
+      j += 1;
+    }
+    if (!child) lines.splice(i, 1);
+  }
+  return { patch: bom + lines.join(''), pruned };
+}
+
+/** 从 bundle 清单里剔除指向不存在包的项（缺包 bundle 会让 dsh 直接起不来）。 */
+export function pruneUnavailableBundles(
+  bundles: unknown,
+  available: Iterable<string>,
+): { kept: unknown[]; removed: string[] } {
+  if (!Array.isArray(bundles)) return { kept: [], removed: [] };
+  const names = available instanceof Set ? (available as Set<string>) : new Set(available);
+  const kept: unknown[] = [];
+  const removed: string[] = [];
+  for (const name of bundles) {
+    if (typeof name !== 'string' || !name) {
+      kept.push(name);
+      continue;
+    }
+    if (/^[./\\]/.test(name) || names.has(packageNameOf(name))) {
+      kept.push(name);
+      continue;
+    }
+    removed.push(name);
+  }
+  return { kept, removed };
+}
