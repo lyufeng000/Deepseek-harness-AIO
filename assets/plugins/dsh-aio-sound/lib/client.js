@@ -265,7 +265,7 @@ window.__ModuleLoader__.load({
     }
 
     exports.apply = apply;
-    exports.inject = ["@deepseek-ai/dsh-client-ui-settings"];
+    exports.inject = ["slots"];
     return module.exports;
   },
 });

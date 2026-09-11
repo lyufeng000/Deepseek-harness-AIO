@@ -209,8 +209,24 @@ test('内置插件已注册进 desktop-core 伴随清单且包内容齐全', asy
   const pkg = JSON.parse(fs.readFileSync(path.join(repo, 'assets/plugins/dsh-aio-sound/package.json'), 'utf8'));
   assert.equal(pkg.name, entry.name);
   assert.equal(pkg.main, 'lib/index.js');
-  assert.deepEqual(pkg.dsh.client.inject, ['@deepseek-ai/dsh-client-ui-settings', '@deepseek-ai/dsh-client-ui-slots']);
+  assert.deepEqual(pkg.dsh.client.inject, ['@deepseek-ai/dsh-client-ui-settings']);
   for (const file of ['lib/index.js', 'lib/client.js', 'assets/play-sound.ps1', 'assets/sounds/task-done.wav', 'README.md', 'LICENSE']) {
     assert.ok(fs.existsSync(path.join(repo, 'assets/plugins/dsh-aio-sound', file)), file + ' present');
   }
+});
+
+test('client 半身的 cordis inject 是服务名，package.json 的 inject 是模块 id', () => {
+  const repo = fileURLToPath(new URL('../', import.meta.url));
+  const client = fs.readFileSync(path.join(repo, 'assets/plugins/dsh-aio-sound/lib/client.js'), 'utf8');
+  const marker = 'exports.inject = ';
+  const at = client.indexOf(marker);
+  assert.ok(at > 0, 'client bundle 必须声明 exports.inject');
+  const inject = JSON.parse(client.slice(at + marker.length, client.indexOf(';', at)));
+  // cordis 服务名（slots 由 @deepseek-ai/dsh-client-ui-slots 提供）。
+  // 曾经误写成包名 -> web boot 报 "pending(waiting for service: @deepseek-ai/dsh-client-ui-settings)"。
+  assert.deepEqual(inject, ['slots']);
+  for (const name of inject) assert.ok(!name.includes('/'), 'exports.inject 必须是服务名，不能是包名: ' + name);
+  const pkg = JSON.parse(fs.readFileSync(path.join(repo, 'assets/plugins/dsh-aio-sound/package.json'), 'utf8'));
+  // dsh.client.inject 是客户端模块 id（包名），语义与运行时服务名不同。
+  assert.deepEqual(pkg.dsh.client.inject, ['@deepseek-ai/dsh-client-ui-settings']);
 });
