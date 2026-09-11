@@ -132,13 +132,28 @@ jobs:
             a/dist/portable/*.txt
           if-no-files-found: error
 
+      - name: Extract release notes
+        if: ${{ env.RELEASE_TAG != '' }}
+        shell: pwsh
+        run: |
+          # 发布说明单一来源：CHANGELOG.md 里该 tag 对应版本的中文段落。
+          $tag = $env:RELEASE_TAG.TrimStart('v')
+          $text = Get-Content -LiteralPath '.\CHANGELOG.md' -Raw -Encoding UTF8
+          $pattern = '(?ms)^## \[' + [regex]::Escape($tag) + '\][^\r\n]*\r?\n(.*?)(?=^## \[|\z)'
+          $match = [regex]::Match($text, $pattern)
+          if (-not $match.Success) { throw "CHANGELOG.md 缺少 $tag 的落版段落，先落版再打 tag" }
+          $body = "# DSHEAC AIO v$tag`r`n`r`n" + $match.Groups[1].Value.Trim() + "`r`n"
+          $file = Join-Path (Get-Location) 'release-notes.md'
+          [IO.File]::WriteAllText($file, $body, (New-Object Text.UTF8Encoding($false)))
+          Write-Host "Release notes: $((Get-Item $file).Length) bytes"
+
       - name: Publish application release
         if: ${{ env.RELEASE_TAG != '' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           name: DSHEAC AIO ${{ env.RELEASE_TAG }}
-          generate_release_notes: true
+          body_path: a/release-notes.md
           files: |
             a/dist/*.exe
             a/dist/portable/*.zip
