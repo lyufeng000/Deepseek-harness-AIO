@@ -73,8 +73,8 @@ build-aio.cmd -Clean
 ## 输出产物
 
 ```text
-dist\DSHEAC-AIO-v1.2.0-Setup-x64.exe
-dist\portable\DSHEAC-AIO-v1.2.0-Portable-x64.zip
+dist\DSHEAC-AIO-v<version>-Setup-x64.exe
+dist\portable\DSHEAC-AIO-v<version>-Portable-x64.zip
 dist\SHA256SUMS.txt
 dist\portable\SHA256SUMS.txt
 dist\build-provenance.json
@@ -86,8 +86,8 @@ dist\build-provenance.json
 
 打包后至少核对：
 
-- `dist\DSHEAC-AIO-v1.2.0-Setup-x64.exe` 存在且哈希与 `dist\SHA256SUMS.txt` 一致。
-- `dist\portable\DSHEAC-AIO-v1.2.0-Portable-x64.zip` 包含：
+- `dist\DSHEAC-AIO-v<version>-Setup-x64.exe` 存在且哈希与 `dist\SHA256SUMS.txt` 一致。
+- `dist\portable\DSHEAC-AIO-v<version>-Portable-x64.zip` 包含：
   - `DSHEAC AIO.exe`
   - `.dsh-portable`
   - `resources\node\node.exe`
@@ -110,7 +110,7 @@ node scripts\verify-dist-fresh.js
 
 ## 构建输入发布
 
-本地生成 CI 所需的完整构建输入包：
+本地生成完整构建输入包（供其他机器或手动触发的 workflow 复用）：
 
 ```powershell
 npm run build-inputs:package
@@ -122,7 +122,22 @@ npm run build-inputs:package
 - `DSHEAC-AIO-build-inputs-v<version>.zip.sha256`
 - `build-inputs-manifest.json`
 
-CI 使用 `.github/workflows/aio-build.yml`：按 Release 资产身份与 SHA-256 下载或复用构建输入、串行化自托管 runner、复用 Cargo 缓存，构建后执行 `verify-dist-fresh.js`，再上传安装器/便携包/哈希/provenance。
+`.github/workflows/aio-build.yml` 已移除 `push: tags` 触发，只在手动 `workflow_dispatch` 时运行：按 Release 资产身份与 SHA-256 下载或复用构建输入、复用 Cargo 缓存，构建后执行 `verify-dist-fresh.js`，再上传安装器/便携包/哈希/provenance。常规发版走下面的本地流程。
+
+## 发行发布（本地打包 + 手动上传）
+
+发版不依赖 GitHub Actions：tag 只作版本标记，`.github/workflows/aio-build.yml` 不再由 tag 触发，
+发行流程全部在本地完成。
+
+1. 先落版，再构建（否则 `build-provenance.json` 的 `commit` 与产物对不上）。需要同步：
+   - `package.json`、`package-lock.json`、`tauri-app/package.json`、`tauri-app/package-lock.json`、`tauri-app/tauri.conf.json`、`tauri-app/Cargo.toml`、`tauri-app/Cargo.lock`（只改本产品包对应的那一条，别碰依赖中的同名版本）；
+   - `sidecar/src/lib/profile-seed-migration.ts`、`sidecar/src/lib/profile-upgrade.ts`、`sidecar/src/shell-host.ts`；
+   - `test/lite-manifest.test.mjs`、`test/profile-upgrade.test.mjs`；
+   - `README.md`、`docs/BUILDING.md`，以及 `CHANGELOG.md` 把 `[Unreleased]` 落成 `[<version>]`（Release 正文取自该中文段落）。
+2. 提交落版改动，用 `build-aio.cmd -FullTest` 打包，再执行 `node scripts\verify-dist-fresh.js`。
+3. 安装 E2E 单独在 AIO 之外执行（安装器会按进程名强杀正在运行的 `DSHEAC AIO.exe`，在 AIO 内运行会打断当前会话）：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts\verify-aio-installer.ps1 -ProjectRoot <仓库根>`。
+4. 打 tag 并推送（只作标记，不再触发 CI），然后手动发布 Release（网页 Draft a new release，或 `gh release create`）。资产必须包含 `DSHEAC-AIO-v<version>-Setup-x64.exe`、`DSHEAC-AIO-v<version>-Portable-x64.zip`、`SHA256SUMS.txt`，可选 `build-provenance.json`。
+5. 客户端应用内更新按资产名 + `SHA256SUMS.txt` 校验，与是否由 CI 构建无关；若使用手动触发的 workflow 发布，其正文取自 `CHANGELOG.md` 对应版本的中文段落。
 
 ## 已知边界
 

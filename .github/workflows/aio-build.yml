@@ -1,5 +1,7 @@
 name: AIO build
 
+# 发布默认在本地完成（build-aio.cmd 打包 + 手动上传 Release），见 AGENTS.md「发行发布」。
+# 本 workflow 只保留手动 workflow_dispatch 备用，push tags 触发已移除。
 on:
   workflow_dispatch:
     inputs:
@@ -13,9 +15,6 @@ on:
         required: false
         default: ''
         type: string
-  push:
-    tags:
-      - 'v*'
 
 permissions:
   contents: write
@@ -34,7 +33,7 @@ jobs:
         working-directory: a
     env:
       BUILD_INPUTS_TAG: ${{ inputs.build_inputs_tag || 'build-inputs-v1.2.0' }}
-      RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
     steps:
       - uses: actions/checkout@v4
         with:
