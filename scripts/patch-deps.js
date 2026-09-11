@@ -75,6 +75,141 @@ function patchSettingsNavScroll() {
   console.log('[patch-deps] 已补丁 settings-general：设置弹窗左栏可滚动，底部条目不再被裁掉');
 }
 
+// 设置左栏「更多设置」三级分组补丁：上游设置面板左栏是平铺的二级导航（每个
+// 插件注册一个 settings.section 就多一列条目），低频页会把左栏撑得很长。
+// 这里把指定的低频 section 从顶层收进一个可折叠的父项「更多设置」（二级），
+// 展开后以缩进条目（三级）呈现；默认收起，展开状态记 localStorage；当前选中
+// 项落在组内时强制展开，避免高亮项不可见。
+//
+// 只改导航呈现：子项点击仍走上游原生的 onSelect(row.id)，内容区照旧由
+// renderSlot("settings.section", { only: active }) 渲染，零功能改动。
+// 锚点未命中（上游改版）时安全跳过并告警；幂等标记 EAC_SETTINGS_NAV_GROUPS_V1。
+const NAV_GROUP_MARKER = 'EAC_SETTINGS_NAV_GROUPS_V1';
+const NAV_GROUP_IDS = ['pricing', 'plugin-shield', 'mood', 'memes', 'dsh-undo', 'motion', 'status-rotator'];
+
+const NAV_PANEL_HEAD_OLD = [
+  '\t\tfunction SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }) {',
+  '\t\t\tconst active = rows.find((r) => r.id === activeId)?.id ?? rows[0]?.id;',
+].join('\n');
+
+const NAV_PANEL_HEAD_NEW = [
+  '\t\t// ' + NAV_GROUP_MARKER + ' —— 低频设置页收进左栏「更多设置」三级分组。',
+  '\t\tconst AIO_NAV_GROUP_LABEL = "更多设置";',
+  '\t\tconst AIO_NAV_GROUP_KEY = "dsh.aioSettingsMore.open";',
+  '\t\tconst AIO_NAV_GROUP_IDS = ' + JSON.stringify(NAV_GROUP_IDS) + ';',
+  '\t\tfunction readAioNavGroupOpen() {',
+  '\t\t\ttry {',
+  '\t\t\t\treturn localStorage.getItem(AIO_NAV_GROUP_KEY) === "1";',
+  '\t\t\t} catch {',
+  '\t\t\t\treturn false;',
+  '\t\t\t}',
+  '\t\t}',
+  '\t\t/** 左栏导航节点：顶层平铺 + 末尾「更多设置」父项 + 展开时的缩进子项。 */',
+  '\t\tfunction settingsNavRows({ rows, active, onSelect, open, onToggle }) {',
+  '\t\t\tconst grouped = new Set(AIO_NAV_GROUP_IDS);',
+  '\t\t\tconst children = rows.filter((row) => grouped.has(row.id));',
+  '\t\t\tconst cell = (row, extra) => (0, react_jsx_runtime.jsxs)("button", {',
+  '\t\t\t\ttype: "button",',
+  '\t\t\t\tclassName: clsx(SettingsRoot_module_css_default.navCell, row.id === active && SettingsRoot_module_css_default.active),',
+  '\t\t\t\t"aria-current": row.id === active ? "true" : void 0,',
+  '\t\t\t\tonClick: () => {',
+  '\t\t\t\t\tonSelect(row.id);',
+  '\t\t\t\t},',
+  '\t\t\t\tstyle: extra,',
+  '\t\t\t\tchildren: [navIcon(row.id), (0, react_jsx_runtime.jsx)("span", {',
+  '\t\t\t\t\tclassName: SettingsRoot_module_css_default.navLabel,',
+  '\t\t\t\t\tchildren: row.label',
+  '\t\t\t\t})]',
+  '\t\t\t}, row.id);',
+  '\t\t\tconst nodes = rows.filter((row) => !grouped.has(row.id)).map((row) => cell(row, void 0));',
+  '\t\t\tif (children.length === 0) return nodes;',
+  '\t\t\tconst holdsActive = children.some((row) => row.id === active);',
+  '\t\t\tconst expanded = open || holdsActive;',
+  '\t\t\tnodes.push((0, react_jsx_runtime.jsxs)("button", {',
+  '\t\t\t\ttype: "button",',
+  '\t\t\t\tclassName: clsx(SettingsRoot_module_css_default.navCell, holdsActive && SettingsRoot_module_css_default.active),',
+  '\t\t\t\t"aria-expanded": expanded ? "true" : "false",',
+  '\t\t\t\tonClick: onToggle,',
+  '\t\t\t\tchildren: [navIcon("__aio_settings_more__"), (0, react_jsx_runtime.jsx)("span", {',
+  '\t\t\t\t\tclassName: SettingsRoot_module_css_default.navLabel,',
+  '\t\t\t\t\tchildren: AIO_NAV_GROUP_LABEL',
+  '\t\t\t\t}), (0, react_jsx_runtime.jsx)("span", {',
+  '\t\t\t\t\tclassName: SettingsRoot_module_css_default.navLabel,',
+  '\t\t\t\t\tstyle: {',
+  '\t\t\t\t\t\tflex: "none",',
+  '\t\t\t\t\t\twidth: 12,',
+  '\t\t\t\t\t\ttextAlign: "right",',
+  '\t\t\t\t\t\topacity: .7',
+  '\t\t\t\t\t},',
+  '\t\t\t\t\tchildren: expanded ? "▾" : "▸"',
+  '\t\t\t\t})]',
+  '\t\t\t}, "__aio_settings_more__"));',
+  '\t\t\tif (expanded) for (const row of children) nodes.push(cell(row, {',
+  '\t\t\t\tpaddingLeft: 34,',
+  '\t\t\t\tfontSize: 13',
+  '\t\t\t}));',
+  '\t\t\treturn nodes;',
+  '\t\t}',
+  '\t\tfunction SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }) {',
+  '\t\t\tconst [aioNavGroupOpen, setAioNavGroupOpen] = (0, react.useState)(readAioNavGroupOpen);',
+  '\t\t\tconst aioNavGroupToggle = () => {',
+  '\t\t\t\tsetAioNavGroupOpen((previous) => {',
+  '\t\t\t\t\tconst next = !previous;',
+  '\t\t\t\t\ttry {',
+  '\t\t\t\t\t\tlocalStorage.setItem(AIO_NAV_GROUP_KEY, next ? "1" : "0");',
+  '\t\t\t\t\t} catch {}',
+  '\t\t\t\t\treturn next;',
+  '\t\t\t\t});',
+  '\t\t\t};',
+  '\t\t\tconst active = rows.find((r) => r.id === activeId)?.id ?? rows[0]?.id;',
+].join('\n');
+
+const NAV_LIST_OLD = [
+  '\t\t\t\t\t\t\tchildren: rows.map((row) => (0, react_jsx_runtime.jsxs)("button", {',
+  '\t\t\t\t\t\t\t\ttype: "button",',
+  '\t\t\t\t\t\t\t\tclassName: clsx(SettingsRoot_module_css_default.navCell, row.id === active && SettingsRoot_module_css_default.active),',
+  '\t\t\t\t\t\t\t\t"aria-current": row.id === active ? "true" : void 0,',
+  '\t\t\t\t\t\t\t\tonClick: () => {',
+  '\t\t\t\t\t\t\t\t\tonSelect(row.id);',
+  '\t\t\t\t\t\t\t\t},',
+  '\t\t\t\t\t\t\t\tchildren: [navIcon(row.id), (0, react_jsx_runtime.jsx)("span", {',
+  '\t\t\t\t\t\t\t\t\tclassName: SettingsRoot_module_css_default.navLabel,',
+  '\t\t\t\t\t\t\t\t\tchildren: row.label',
+  '\t\t\t\t\t\t\t\t})]',
+  '\t\t\t\t\t\t\t}, row.id))',
+].join('\n');
+
+const NAV_LIST_NEW = [
+  '\t\t\t\t\t\t\tchildren: settingsNavRows({',
+  '\t\t\t\t\t\t\t\trows,',
+  '\t\t\t\t\t\t\t\tactive,',
+  '\t\t\t\t\t\t\t\tonSelect,',
+  '\t\t\t\t\t\t\t\topen: aioNavGroupOpen,',
+  '\t\t\t\t\t\t\t\tonToggle: aioNavGroupToggle',
+  '\t\t\t\t\t\t\t})',
+].join('\n');
+
+function patchSettingsNavGroups(root = path.resolve(__dirname, '..')) {
+  const file = path.join(root, 'node_modules', '@deepseek-ai', 'dsh-client-ui-settings-general', 'lib', 'client.js');
+  if (!fs.existsSync(file)) {
+    console.log('[patch-deps] dsh-client-ui-settings-general 不存在，跳过导航分组补丁');
+    return { patched: false };
+  }
+  let src = fs.readFileSync(file, 'utf8');
+  if (src.includes(NAV_GROUP_MARKER)) {
+    console.log('[patch-deps] 设置左栏「更多设置」分组补丁已应用，跳过');
+    return { patched: false };
+  }
+  if (!src.includes(NAV_PANEL_HEAD_OLD) || !src.includes(NAV_LIST_OLD)) {
+    console.log('[patch-deps] settings-general 未匹配到目标导航代码（上游版本可能已更新），跳过');
+    return { patched: false };
+  }
+  src = src.replace(NAV_PANEL_HEAD_OLD, NAV_PANEL_HEAD_NEW).replace(NAV_LIST_OLD, NAV_LIST_NEW);
+  fs.writeFileSync(file, src);
+  console.log('[patch-deps] 已补丁 settings-general：低频设置项收进左栏「更多设置」三级分组（默认收起）');
+  return { patched: true, file };
+}
+
 // 会话滚动手势补丁：0.1.1-rc.2 在 scroll 事件到达后立即采样，流式输出或
 // composer 尺寸变化触发的 ResizeObserver 可能在一次滚轮/触摸惯性手势尚未
 // 累计离开底部阈值前重新吸附到底部。回移上游 2026-09-01 / 2026-09-07 的
@@ -270,6 +405,7 @@ function patchDshPluginPnpmHide(root = path.resolve(__dirname, '..')) {
 function main() {
   patchPickerWorker();
   patchSettingsNavScroll();
+  patchSettingsNavGroups();
   patchConversationScrollSampling();
   injectDshClosureExtras();
   patchDshPluginPnpmHide();
@@ -277,4 +413,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { patchConversationScrollSampling, patchDshPluginPnpmHide };
+module.exports = { patchConversationScrollSampling, patchDshPluginPnpmHide, patchSettingsNavGroups };

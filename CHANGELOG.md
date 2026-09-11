@@ -16,7 +16,27 @@ DeepSeek Harness（dsh）的 Windows 桌面客户端：内置独立 Node 运行�
 4.4.0（修复设置页「Skills 与 MCP → 打开目录」失效）→
 4.5.0（本版：内核升级 0.1.1-rc.2 + 内置 dsh-market 社区插件市场）。
 
-## [Unreleased]
+## [1.3.1] — 2026-09-11
+
+### 新增：设置左栏「更多设置」三级分组
+- 设置弹窗左栏的低频入口（价格设置、插件保护、MOOD、表情包、快照、动效、状态文案）
+  收进可折叠的父项「更多设置」（二级），展开后以缩进子项（三级）呈现；默认收起，
+  展开状态记 localStorage，当前选中项落在组内时自动展开。子项点击仍走上游原生
+  `onSelect(row.id)`，内容区照旧由 `renderSlot("settings.section")` 渲染，零功能改动。
+- 由 `scripts/patch-deps.js` 的受控依赖补丁实现（幂等标记 `EAC_SETTINGS_NAV_GROUPS_V1`）；
+  上游改版导致锚点缺失时安全跳过并告警。
+
+### 新增：会话完成音效 + 设置「音效」栏（内置插件 `dsh-aio-sound`）
+- 上游 `dsh-webui` 的提示音由客户端「当前选中会话」的 turnTail 槽位触发：切到别的
+  会话后，后台会话跑完不出声。新插件把播放搬到 host 端监听 `session/event`，任何会话
+  （含后台会话、子代理 `subagent` 回合、用户中断、审批与提问等待）一完成就出声，逐次播放。
+- host 端用 PowerShell + WPF `MediaPlayer` 播放，绕开浏览器自动播放限制；音量 0–100
+  只作用于提示音、不改系统音量，媒体栈不可用时回退 `System.Media.SoundPlayer`。
+- 设置页新增「音效」栏：会话完成是否播放、音量、播放内容（默认沿用现有 `task-done.wav`，
+  并内置柔和双音/清脆三连音/铃声/水滴/短促双响，支持扫描自定义目录的 wav）与自定义目录。
+  配置存 `settings.yaml` 的 `aio-sound` 命名空间；路由 `/api/aio-sound/{state,config,preview}`。
+- 受控种子补丁移除上游「基础设置 → 插件任务完成提示音」行与客户端上报，避免两个开关、
+  双份播放（旧行的 localStorage 开关随之失效）。
 
 ### 修复：远程更新不再覆盖用户设置
 - 应用内更新或覆盖安装后首次启动替换 desktop profile 时，不再整目录丢弃用户字节：

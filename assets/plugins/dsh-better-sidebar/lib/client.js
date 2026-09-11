@@ -1306,8 +1306,12 @@ window.__ModuleLoader__.load({
 		/** Chunk script endpoint served by the plugin host half (src/bundle-route.ts). */
 		const CHUNK_URL = (name) => `/sidebar/bundle/${name}.js`;
 		/** Resolve the shell-installed module system (set before any plugin activates). */
+		let boundModules;
+		function bindModuleSystem(modules) {
+			if (modules && typeof modules.import === "function") boundModules = modules;
+		}
 		function moduleSystem() {
-			return globalThis.__DSH_MODULES__;
+			return boundModules ?? globalThis.__DSH_MODULES__;
 		}
 		function chunkRegistry() {
 			const g = globalThis;
@@ -8806,7 +8810,8 @@ window.__ModuleLoader__.load({
 			"sessions",
 			"connection",
 			"workspaces",
-			"locale"
+			"locale",
+			"modules"
 		];
 		/**
 		* Error boundary over the sidebar tree (root scope): a render error in the
@@ -8820,6 +8825,10 @@ window.__ModuleLoader__.load({
 		* @param ctx - the client cordis context (slots, sessions).
 		*/
 		function apply(ctx) {
+			bindModuleSystem(ctx.modules);
+			try {
+				if (typeof ctx.inject === "function") ctx.inject(["modules"], (mctx) => bindModuleSystem(mctx.modules));
+			} catch {}
 			attachLocale(ctx.locale);
 			ctx.effect(() => {
 				const offZh = ctx.locale.register(LOCALE_NS, "zh", zh);

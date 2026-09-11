@@ -22,6 +22,10 @@ import path from 'node:path';
 
 const DEEPSEEK_MODULE = ['profiles', 'web-desktop', 'node_modules', '@deepseek-ai', 'dsh-llm-deepseek', 'lib', 'index.js'];
 const WEBUI_VISION_HELPER = ['profiles', 'web-desktop', 'node_modules', '@dsh-external', 'dsh-webui', 'lib', 'vision-helper.js'];
+const STATUS_ROTATOR_CLIENT = ['profiles', 'web-desktop', 'node_modules', 'dsh-status-rotator', 'lib', 'client.js'];
+const STATUS_ROTATOR_HOST = ['profiles', 'web-desktop', 'node_modules', 'dsh-status-rotator', 'lib', 'index.js'];
+const STATUS_ROTATOR_EXAMPLE = ['profiles', 'web-desktop', 'node_modules', 'dsh-status-rotator', 'config.example.json'];
+const WEBUI_CLIENT = ['profiles', 'web-desktop', 'node_modules', '@dsh-external', 'dsh-webui', 'lib', 'client.js'];
 
 /** 受控补丁清单：稳定锚点、幂等替换，目标缺失或上游改写时安全跳过。 */
 export const SEED_PATCHES = Object.freeze([
@@ -38,6 +42,41 @@ export const SEED_PATCHES = Object.freeze([
     label: 'dsh-webui vision-helper module',
     from: 'textModelImageFallback: z.boolean().default(true),',
     to: 'textModelImageFallback: z.boolean().default(false),',
+  }),
+  Object.freeze({
+    id: 'status-rotator-pill-default-off',
+    file: STATUS_ROTATOR_CLIENT,
+    label: 'dsh-status-rotator client',
+    from: "/** 实时状态 Pill:false 关闭;或 { enabled, template, position, opacity } */\n\t\t\tpill: {\n\t\t\t\tenabled: true,",
+    to: "/** 实时状态 Pill:false 关闭;或 { enabled, template, position, opacity } */\n\t\t\tpill: {\n\t\t\t\tenabled: false,",
+  }),
+  Object.freeze({
+    id: 'status-rotator-example-pill-off',
+    file: STATUS_ROTATOR_EXAMPLE,
+    label: 'dsh-status-rotator config.example.json',
+    from: "\"pill\": {\n            \"enabled\": true,\n            \"template\": \"{model} · {phaseLabel} · {elapsed} · ⚡{tps} tok/s\",",
+    to: "\"pill\": {\n            \"enabled\": false,\n            \"template\": \"{model} · {phaseLabel} · {elapsed} · ⚡{tps} tok/s\",",
+  }),
+  Object.freeze({
+    id: 'status-rotator-settings-inject',
+    file: STATUS_ROTATOR_HOST,
+    label: 'dsh-status-rotator host',
+    from: "const name = \"status-rotator\";\n/**\n * 不硬依赖任何服务:webServer 缺失的宿主(如 headless/测试 profile)也要能激活,\n * 只是不注册配置路由(对应 testkit 生命周期检查发现的问题)。\n */\nconst inject = [];",
+    to: "const name = \"status-rotator\";\n/**\n * 不硬依赖任何服务:webServer 缺失的宿主(如 headless/测试 profile)也要能激活,\n * 只是不注册配置路由(对应 testkit 生命周期检查发现的问题)。\n */\nconst inject = [\"settings\"];",
+  }),
+  Object.freeze({
+    id: 'webui-done-sound-row-remove',
+    file: WEBUI_CLIENT,
+    label: 'dsh-webui client task-done settings row',
+    from: "\t\t\tctx.slots.inject(\"settings.general.item\", () => ctx.slots.register({\r\n\t\t\t\tname: \"settings.general.item\",\r\n\t\t\t\tid: \"task-done-sound\",\r\n\t\t\t\torder: 30,\r\n\t\t\t\tlabel: \"插件任务完成提示音\"\r\n\t\t\t}, TaskDoneRow));",
+    to: "\t\t\t// EAC_AIO_SOUND_OWNER_V1: 「插件任务完成提示音」行已迁到 dsh-aio-sound 的「音效」栏。",
+  }),
+  Object.freeze({
+    id: 'webui-done-sound-reporting-remove',
+    file: WEBUI_CLIENT,
+    label: 'dsh-webui client turnTail reporting',
+    from: "\t\t\tctx.slots.inject(\"conversation.chat.turnTail\", () => ctx.slots.register({\r\n\t\t\t\tname: \"conversation.chat.turnTail\",\r\n\t\t\t\tselect: (owner) => ({\r\n\t\t\t\t\tturn: owner.turn.turn,\r\n\t\t\t\t\tendedAt: owner.turn.end === void 0 ? 0 : owner.turn.end.time\r\n\t\t\t\t})\r\n\t\t\t}, TurnDoneSound));",
+    to: "\t\t\t// EAC_AIO_SOUND_OWNER_V1: 会话完成提示音改由 dsh-aio-sound 在 host 端统一播放（含后台会话）。",
   }),
 ]);
 

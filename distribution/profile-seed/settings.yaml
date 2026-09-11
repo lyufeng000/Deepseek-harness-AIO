@@ -63,7 +63,7 @@ status-rotator:
       default:
         - Working…
 webui-modules:
-  rewind: false
+  rewind: true
   updater: false
   modelSeats: false
   peakValley: false

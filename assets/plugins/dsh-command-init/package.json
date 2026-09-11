@@ -1,0 +1,15 @@
+{
+  "name": "dsh-command-init",
+  "description": "Slash command /init: read AGENTS.md and inject it into the first user message of a session.",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "runtime": "host"
+  },
+  "license": "MIT"
+}

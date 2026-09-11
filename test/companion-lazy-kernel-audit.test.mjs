@@ -43,7 +43,7 @@ test('audit is pinned to the installed 0.1.3-alpha.2 owners', () => {
   }
 });
 
-test('reproduces editor and terminal load failure despite a working ctx.modules owner', async () => {
+test('chunk loader uses bound ctx.modules when __DSH_MODULES__ is absent', async () => {
   const { sandbox, exports, id } = browserBundle('node_modules/@deepseek-ai/dsh-client-modules/lib/client.js');
   const system = exports.createClientModuleSystem({ mode: 'queue', pendingQueue: [] },
     { id, exports }, {
@@ -57,12 +57,18 @@ test('reproduces editor and terminal load failure despite a working ctx.modules 
   assert.equal((await ctx.modules.import('react')).auditSeed, true);
   assert.equal(sandbox.__DSH_MODULES__, undefined);
 
-  // Execute the actual lazy path, including its global read. The script loader
-  // must not be reached: failure precedes both chunk fetching and require.
   const loader = between(sidebar, 'const CHUNK_EXTERNALS = [', '\n\t\t//#endregion');
-  vm.runInContext(`${loader}\nglobalThis.auditLoadChunk = loadChunk;`, sandbox);
+  vm.runInContext(`${loader}\nglobalThis.auditLoadChunk = loadChunk;\nglobalThis.auditBindModuleSystem = bindModuleSystem;`, sandbox);
   for (const chunk of ['editor', 'terminal']) {
     await assert.rejects(sandbox.auditLoadChunk(chunk), /client module system unavailable/);
+  }
+  sandbox.auditBindModuleSystem(system);
+  for (const chunk of ['editor', 'terminal']) {
+    await assert.rejects(sandbox.auditLoadChunk(chunk), (error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      assert.doesNotMatch(message, /client module system unavailable/);
+      return true;
+    });
   }
 });
 
@@ -77,8 +83,6 @@ test('reproduces fenced-Markdown preview failure with the lazy editor actual pro
   });
   assert.ok(element.props.codeLabels);
   assert.equal(element.props.labels, undefined);
-  // Use the installed fence renderer unchanged; CSS/DOM/highlighting are not
-  // involved in this missing-label failure.
   const renderCodeSource = between(primitives, 'function renderCode(', '\n/** A list is loose');
   const renderCode = vm.runInNewContext(`${renderCodeSource}\nrenderCode`, {
     jsx: (type, props) => ({ type, props }), CodeBlock: 'CodeBlock',
@@ -93,7 +97,6 @@ test('reproduces fenced-Markdown preview failure with the lazy editor actual pro
 test('reproduces silent subagent activity failure against the installed connection handle', async () => {
   const { exports } = browserBundle('node_modules/@deepseek-ai/dsh-client-connection/lib/client.js');
   const ctx = {};
-  // Connection apply constructs a dormant handle; never start its connect loop.
   exports.apply({ provide(name, value) { ctx[name] = value; } });
   assert.equal(typeof ctx.connection.rpc.call, 'function');
   assert.equal(ctx.connection.api, undefined);
@@ -142,8 +145,6 @@ test('reproduces restored job output loss with a real in-memory installed Sessio
   const result = build(context(session), 1024).output({ sessionId: session.id, id: 'job-audit' });
   assert.equal(result.text, '');
   assert.equal(result.read, false);
-  // Positive control: identical stored events become visible through the new
-  // owner API. No plugin file is changed to supply this comparison adapter.
   const projected = { events: session.snapshotEvents() };
   const control = build(context(projected), 1024).output({ sessionId: session.id, id: 'job-audit' });
   assert.equal(control.text, 'restored output');

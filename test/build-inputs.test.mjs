@@ -25,7 +25,8 @@ test('build-inputs workflow downloads, verifies and builds', () => {
   assert.match(workflow, /concurrency:/);
   assert.match(workflow, /Swatinem\/rust-cache@v2/);
   assert.doesNotMatch(workflow, /dtolnay\/rust-toolchain/);
-  assert.match(workflow, /tags:\s*\r?\n\s*- 'v\*'/);
+  // 发版改为本地打包 + 手动上传：tag 只作版本标记，不再触发 workflow。
+  assert.doesNotMatch(workflow, /^\s{2}tags:/m);
   assert.match(workflow, /Invoke-RestMethod -Uri "https:\/\/api\.github\.com\/repos\/\$env:GITHUB_REPOSITORY\/releases\/tags\/\$env:BUILD_INPUTS_TAG"/);
   assert.match(workflow, /verify-build-inputs\.ps1/);
   assert.match(workflow, /build-aio-package\.ps1 -ProfileSeedDir/);

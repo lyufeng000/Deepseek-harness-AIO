@@ -121,6 +121,8 @@ export function createDesktopCore(ctx: DesktopCoreCtx) {
     { id: 'dsh-undo', name: 'dsh-undo-savepoint', dir: 'dsh-undo-savepoint' },
     // 为内置 DeepSeek provider 补上实时 /models 发现（上游该路由没有发现器）。
     { id: 'aio-live-models', name: 'dsh-aio-live-models', dir: 'dsh-aio-live-models' },
+      { id: 'command-init', name: 'dsh-command-init', dir: 'dsh-command-init' },
+    { id: 'aio-sound', name: 'dsh-aio-sound', dir: 'dsh-aio-sound' },
   ];
 
   // ------------------------------------------------------ 保护中心（guard）--

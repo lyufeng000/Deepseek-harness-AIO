@@ -34,8 +34,8 @@ function seedWith(t, files = {}) {
 const deepseekBody = (anchor = FROM) => `const catalogModel = z.object({\n  ${anchor}\n});\n`;
 const visionBody = (anchor = VISION_FROM) => `export const Config = z.object({\n    ${anchor}\n});\n`;
 
-test('补丁清单声明两个受控目标，路径与文件名稳定', () => {
-  assert.deepEqual(SEED_PATCHES.map((p) => p.id), ['deepseek-native-image', 'webui-vision-fallback-off']);
+test('补丁清单声明七个受控目标，路径与文件名稳定', () => {
+  assert.deepEqual(SEED_PATCHES.map((p) => p.id), ['deepseek-native-image', 'webui-vision-fallback-off', 'status-rotator-pill-default-off', 'status-rotator-example-pill-off', 'status-rotator-settings-inject', 'webui-done-sound-row-remove', 'webui-done-sound-reporting-remove']);
   assert.deepEqual(SEED_PATCHES[0].file, DEEPSEEK_MODULE);
   assert.deepEqual(SEED_PATCHES[1].file, WEBUI_VISION_HELPER);
 });
@@ -102,7 +102,58 @@ test('dsh-webui 目标缺失或上游改写时只跳过该补丁，不影响 Dee
 
   const missing = seedWith(t);
   const results = applySeedPatches(missing);
-  assert.deepEqual(results.map((r) => r.id), ['deepseek-native-image', 'webui-vision-fallback-off']);
+  assert.deepEqual(results.map((r) => r.id), ['deepseek-native-image', 'webui-vision-fallback-off', 'status-rotator-pill-default-off', 'status-rotator-example-pill-off', 'status-rotator-settings-inject', 'webui-done-sound-row-remove', 'webui-done-sound-reporting-remove']);
   assert.ok(results.every((r) => r.applied === false));
   assert.deepEqual(results[1].reason, 'dsh-webui vision-helper module not present');
+});
+
+test('补丁关闭 status-rotator Pill 默认值并改 inject，且幂等', (t) => {
+  const clientFile = ['profiles', 'web-desktop', 'node_modules', 'dsh-status-rotator', 'lib', 'client.js'];
+  const hostFile = ['profiles', 'web-desktop', 'node_modules', 'dsh-status-rotator', 'lib', 'index.js'];
+  const exampleFile = ['profiles', 'web-desktop', 'node_modules', 'dsh-status-rotator', 'config.example.json'];
+  const pill = SEED_PATCHES.find((p) => p.id === 'status-rotator-pill-default-off');
+  const example = SEED_PATCHES.find((p) => p.id === 'status-rotator-example-pill-off');
+  const inject = SEED_PATCHES.find((p) => p.id === 'status-rotator-settings-inject');
+  const root = seedWith(t, {
+    [clientFile.join('/')]: `prefix\n${pill.from}\nsuffix\n`,
+    [hostFile.join('/')]: `prefix\n${inject.from}\nsuffix\n`,
+    [exampleFile.join('/')]: `prefix\n${example.from}\nsuffix\n`,
+  });
+  const results = applySeedPatches(root);
+  const byId = Object.fromEntries(results.map((r) => [r.id, r]));
+  assert.equal(byId['status-rotator-pill-default-off'].applied, true);
+  assert.equal(byId['status-rotator-example-pill-off'].applied, true);
+  assert.equal(byId['status-rotator-settings-inject'].applied, true);
+  assert.ok(fs.readFileSync(path.join(root, ...clientFile), 'utf8').includes(pill.to));
+  assert.ok(fs.readFileSync(path.join(root, ...exampleFile), 'utf8').includes(example.to));
+  assert.ok(fs.readFileSync(path.join(root, ...hostFile), 'utf8').includes(inject.to));
+  const second = applySeedPatches(root);
+  assert.equal(second.find((r) => r.id === 'status-rotator-pill-default-off').reason, 'already patched');
+  assert.equal(second.find((r) => r.id === 'status-rotator-example-pill-off').reason, 'already patched');
+  assert.equal(second.find((r) => r.id === 'status-rotator-settings-inject').reason, 'already patched');
+});
+
+test('补丁移除 dsh-webui 旧提示音设置行与客户端上报，且幂等', (t) => {
+  const webuiClientFile = ['profiles', 'web-desktop', 'node_modules', '@dsh-external', 'dsh-webui', 'lib', 'client.js'];
+  const row = SEED_PATCHES.find((p) => p.id === 'webui-done-sound-row-remove');
+  const reporting = SEED_PATCHES.find((p) => p.id === 'webui-done-sound-reporting-remove');
+  const root = seedWith(t, {
+    [webuiClientFile.join('/')]: `prefix
+${row.from}
+${reporting.from}
+suffix
+`,
+  });
+  const results = applySeedPatches(root);
+  const byId = Object.fromEntries(results.map((r) => [r.id, r]));
+  assert.equal(byId['webui-done-sound-row-remove'].applied, true);
+  assert.equal(byId['webui-done-sound-reporting-remove'].applied, true);
+  const patched = fs.readFileSync(path.join(root, ...webuiClientFile), 'utf8');
+  assert.ok(patched.includes(row.to));
+  assert.ok(patched.includes(reporting.to));
+  assert.ok(!patched.includes(row.from));
+  assert.ok(!patched.includes(reporting.from));
+  const second = applySeedPatches(root);
+  assert.equal(second.find((r) => r.id === 'webui-done-sound-row-remove').reason, 'already patched');
+  assert.equal(second.find((r) => r.id === 'webui-done-sound-reporting-remove').reason, 'already patched');
 });

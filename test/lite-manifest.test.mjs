@@ -14,16 +14,17 @@ const KEEP_SKINS = [];
 
 const KEEP_PLUGIN_DIRS = [
   'dsh-aio-live-models',
+  'dsh-aio-sound',
   'dsh-aio-ui-compat',
   'dsh-auto-compact', 'dsh-balance', 'dsh-better-sidebar', 'dsh-composer-dynamic-island',
   'dsh-plugin-manager',
-  'dsh-plugin-shield', 'dsh-undo-savepoint',
+  'dsh-plugin-shield', 'dsh-undo-savepoint', 'dsh-command-init',
 ].sort();
 
 // Active Tauri sidecar registry; frozen Electron files are not the source of truth.
 const KEEP_PLUGIN_IDS = [
-  'aio-live-models', 'auto-compact', 'balance', 'better-sidebar', 'composer-dynamic-island',
-  'dsh-undo', 'plugin-manager', 'plugin-shield',
+  'aio-live-models', 'aio-sound', 'auto-compact', 'balance', 'better-sidebar', 'composer-dynamic-island',
+  'command-init', 'dsh-undo', 'plugin-manager', 'plugin-shield',
 ].sort();
 
 // 壳层与脚本中禁止再出现的引用（移除功能的残留）。
@@ -83,7 +84,7 @@ test('插件：assets/plugins 包含保留插件及内核 UI 兼容包', () => {
   }
 });
 
-test('插件：active sidecar COMPANION_PLUGINS 恰为保留的 8 个 id', () => {
+test('插件：active sidecar COMPANION_PLUGINS 恰为保留的 10 个 id', () => {
   const main = read('sidecar/src/desktop-core.ts');
   const m = main.match(/const COMPANION_PLUGINS: CompanionEntry\[\] = \[([\s\S]*?)\];/);
   assert.ok(m, 'sidecar 中找不到 COMPANION_PLUGINS 定义');
@@ -150,7 +151,7 @@ test('打包：package.json 使用 AIO v1 发布标识、无客户端自更新�
   const pkg = JSON.parse(read('package.json'));
   assert.equal(pkg.name, 'dsh-desktop-aio');
   assert.equal(pkg.productName, 'DSHEAC AIO');
-  assert.equal(pkg.version, '1.3.0');
+  assert.equal(pkg.version, '1.3.1');
   assert.equal(JSON.parse(read('tauri-app/package.json')).version, pkg.version);
   assert.equal(JSON.parse(read('tauri-app/tauri.conf.json')).version, pkg.version);
   assert.equal(JSON.parse(read('package-lock.json')).version, pkg.version);
