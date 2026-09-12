@@ -124,7 +124,11 @@ test('state 路由返回内置音效清单与默认配置', async () => {
   const state = await call(routes.get('/api/aio-sound/state'), 'GET');
   assert.equal(state.status, 200);
   assert.equal(state.headers['Cache-Control'], 'no-store');
-  assert.deepEqual(state.json.config, { enabled: true, volume: 100, sound: 'task-done.wav', customDir: '' });
+  assert.equal(state.json.config.enabled, true);
+  assert.equal(state.json.config.events.complete.sound, 'task-done.wav');
+  assert.equal(state.json.config.events.interrupted.sound, 'drop.wav');
+  assert.equal(state.json.config.events.question.sound, 'bell.wav');
+  assert.equal(state.json.config.events.error.sound, 'pulse.wav');
   assert.equal(state.json.customDirIsDefault, true);
   const files = state.json.sounds.filter((row) => row.source === 'builtin').map((row) => row.file);
   assert.deepEqual(files, ['bell.wav', 'chime-bright.wav', 'chime-soft.wav', 'drop.wav', 'pulse.wav', 'task-done.wav']);
@@ -147,7 +151,10 @@ test('config 路由校验音量、音效名与开关类型', async () => {
   assert.equal((await call(route, 'POST', { customDir: 7 })).status, 400);
   const ok = await call(route, 'POST', { enabled: false, volume: 42.6, sound: 'bell.wav', customDir: ' C:\sounds ' });
   assert.equal(ok.status, 200);
-  assert.deepEqual(ok.json.config, { enabled: false, volume: 43, sound: 'bell.wav', customDir: 'C:\sounds' });
+  assert.equal(ok.json.config.enabled, false);
+  assert.equal(ok.json.config.volume, 43);
+  assert.equal(ok.json.config.customDir, 'C:\sounds');
+  assert.equal(ok.json.config.events.complete.sound, 'bell.wav');
   const state = await call(routes.get('/api/aio-sound/state'), 'GET');
   assert.equal(state.json.customDirIsDefault, false);
   assert.equal(state.json.config.enabled, false);
@@ -171,25 +178,32 @@ test('自定义目录里的 wav 进入清单，未知音效试听返回 404', as
   assert.equal((await call(routes.get('/api/aio-sound/preview'), 'GET')).status, 405);
 });
 
-test('会话完成事件触发播放尝试，关闭开关后不再尝试', async () => {
+test('顶层会话按完成、中断、询问、错误分类，子代理与重复事件不响', async () => {
   const mod = await pluginModule();
   const { ctx, routes, events } = makeCtx(settingsStub());
   mod.apply(ctx);
-  await call(routes.get('/api/aio-sound/config'), 'POST', { sound: 'missing.wav' });
+  await call(routes.get('/api/aio-sound/config'), 'POST', { events: {
+    complete: { sound: 'missing.wav' }, interrupted: { sound: 'missing.wav' },
+    question: { sound: 'missing.wav' }, error: { sound: 'missing.wav' },
+  } });
   const sessionEvents = events.get('session/event');
   const logs = await captureLogs(async () => {
-    for (const handler of sessionEvents) handler({ id: 's1' }, { type: 'turn/end' });
-    for (const handler of sessionEvents) handler({ id: 's1' }, { type: 'approval/asked' });
-    for (const handler of events.get('user-questions/request')) handler({ agent: 'a' });
+    const session = { id: 's1', header: {} };
+    for (const handler of sessionEvents) handler(session, { type: 'turn/end', seq: 10, data: { turn: 1, reason: { kind: 'completed' } } });
+    for (const handler of sessionEvents) handler(session, { type: 'turn/end', seq: 11, data: { turn: 2, reason: { kind: 'aborted', reason: { kind: 'user' } } } });
+    for (const handler of sessionEvents) handler(session, { type: 'turn/end', seq: 12, data: { turn: 3, reason: { kind: 'error', error: {} } } });
+    for (const handler of sessionEvents) handler(session, { type: 'approval/asked', seq: 13, data: { id: 'a1' } });
+    for (const handler of sessionEvents) handler(session, { type: 'approval/asked', seq: 13, data: { id: 'a1' } });
+    for (const handler of sessionEvents) handler({ id: 'child', header: { origin: 'subagent', parentSession: 's1' } }, { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } });
     for (const handler of sessionEvents) handler({ id: 's1' }, { type: 'user/message' });
   });
   const attempts = logs.filter((line) => line.includes('play failed'));
-  assert.equal(attempts.length, 3, JSON.stringify(logs));
+  assert.equal(attempts.length, 4, JSON.stringify(logs));
   assert.ok(attempts.every((line) => line.includes('missing.wav')));
 
   await call(routes.get('/api/aio-sound/config'), 'POST', { enabled: false });
   const off = await captureLogs(async () => {
-    for (const handler of sessionEvents) handler({ id: 's1' }, { type: 'turn/end' });
+    for (const handler of sessionEvents) handler({ id: 's2', header: {} }, { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } });
   });
   assert.equal(off.filter((line) => line.includes('play failed')).length, 0);
 });

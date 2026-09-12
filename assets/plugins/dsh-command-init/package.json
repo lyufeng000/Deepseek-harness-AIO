@@ -1,7 +1,7 @@
 {
   "name": "dsh-command-init",
-  "description": "Slash command /init: read AGENTS.md and inject it into the first user message of a session.",
-  "version": "0.1.0",
+  "description": "Slash command /init: refresh AGENTS.md in hidden model context without changing the user's message.",
+  "version": "0.2.0",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

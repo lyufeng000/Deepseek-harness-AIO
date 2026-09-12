@@ -38,14 +38,9 @@
 # opt-in for standard-schema bootstraps; unset, the adapter default flows. See
 # tool-bootstrap.mjs for the other triggers.
 #
-# The same phase gate suppresses AUTO-INJECTED context on request #1:
-# `suppressedContextSources` lists the `agent/pre-step` message sources the
-# bootstrap filter strips while the session is unpromoted. The defaults are the
-# two automatic injections Standard adds over Minimal — the available-skills
-# reminder (`skill-catalog`) and the workspace instruction digest
-# (`agent-instructions`). User-initiated skill gestures are not filtered, and
-# both injections return unchanged from request #2 on. Set the list to [] to
-# disable the context filter while keeping the tool bootstrap.
+# The same phase gate only suppresses the large automatic skill catalog on
+# request #1. Workspace instructions (`agent-instructions`) must reach the
+# first real model request, so they are deliberately outside this filter.
 #
 # POST-PROMOTION (local addition): the promoted catalog is NOT the full
 # Standard dump — it stays on the bootstrap pair + the three discovery tools
@@ -62,7 +57,7 @@
   config:
     bootstrapTools: [bash, str_replace_editor]
     promoteOn: either
-    suppressedContextSources: [agent-instructions, skill-catalog]
+    suppressedContextSources: [skill-catalog]
     # Post-compaction core work set: the model is mid-task and needs to keep
     # working, but faces a small catalog instead of the full Standard set.
     compactionTools: [read, write, edit, glob, grep, todo_write, ask_user_question]
@@ -80,16 +75,9 @@
     complete: true
     includeRuntimeContext: false
 
-# Instruction FILES are NOT injected (replaces dsh-agent-instructions, local
-# addition): the full AGENTS.md/CLAUDE.md digest is a large injected block
-# that perturbs the trajectory even after promotion. Instead, after promotion
-# ONE short hint is injected once per session — "these instruction files
-# exist; read them before acting" — and the model reads the files itself via
-# the filesystem tools when relevant.
-- id: instruction-hint
-  name: ./instruction-hint.mjs
-  config:
-    promoteOn: either
+# Workspace instructions are provided by the host's official
+# `dsh-agent-instructions` projection. They stay out of the visible transcript,
+# survive resume/compaction, and preserve global/project/local scoping.
 
 # On-demand tool discovery (the tool-search pattern, local addition): the
 # promoted catalog keeps a minimal resident set; heavier Standard tools

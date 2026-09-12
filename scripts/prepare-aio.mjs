@@ -33,7 +33,7 @@ try {
   step('staging', ['package.json', 'package-lock.json', 'sidecar/dist', 'assets', 'node_modules', 'vendor', 'tauri-app/scripts/stage.ts', 'scripts/patch-done-pill.cjs', 'scripts/patch-session-motion.cjs', 'scripts/seed-kernel-patches.mjs', path.relative(root, seed)], ['tauri-app/resources'], () => {
     node('tauri-app/scripts/stage.ts');
     // 受控种子补丁只作用于打包副本：图片交给原生多模态模型，不再依赖专门的图像解析模型。
-    for (const patched of applySeedPatches(resolve('tauri-app/resources/profile-seed'))) {
+    for (const patched of applySeedPatches(resolve('tauri-app/resources/profile-seed'), { strict: true })) {
       console.log(`[build] seed-patch ${patched.id}: ${patched.applied ? 'applied' : 'skipped'} ${patched.reason ?? ''}`);
     }
   }, toolchain);

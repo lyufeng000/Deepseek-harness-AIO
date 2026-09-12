@@ -2,9 +2,9 @@
  * dsh-aio-sound — browser half: the 「音效」 settings section.
  *
  * 一行一个开关/滑杆/下拉，配置读写走 host 半身的 /api/aio-sound 路由：
- *   - 会话完成是否播放音效（host 端监听所有会话，不受当前选中影响）
+ *   - 主任务完成 / 中断 / 询问 / 错误四类独立开关、选曲与试听
  *   - 音量 0..100（只作用于提示音，不动系统音量）
- *   - 播放内容（内置音效 + 自定义目录扫描到的 wav，默认沿用现有提示音）
+ *   - 播放内容（内置音效 + 自定义目录扫描到的 wav）
  *   - 自定义音效目录（留空 = DSH 数据目录下的 sounds）
  *
  * Hand-written ModuleLoader bundle — no build step (same shape as dsh-plugin-shield).
@@ -123,7 +123,14 @@ window.__ModuleLoader__.load({
 
       function save(patch, label) {
         setState(function (prev) {
-          return Object.assign({}, prev, { config: Object.assign({}, prev.config, patch), notice: null, error: null });
+          var nextConfig = Object.assign({}, prev.config, patch);
+          if (patch.events) {
+            nextConfig.events = Object.assign({}, prev.config.events);
+            Object.keys(patch.events).forEach(function (kind) {
+              nextConfig.events[kind] = Object.assign({}, prev.config.events[kind], patch.events[kind]);
+            });
+          }
+          return Object.assign({}, prev, { config: nextConfig, notice: null, error: null });
         });
         post("/config", patch).then(function (payload) {
           setState(function (prev) { return Object.assign({}, prev, payloadToState(payload), { notice: (label || "设置") + "已保存" }); });
@@ -167,31 +174,38 @@ window.__ModuleLoader__.load({
       var config = state.config;
       var builtin = [];
       var custom = [];
-      var currentSelected = false;
       var index;
       for (index = 0; index < state.sounds.length; index += 1) {
         if (state.sounds[index].source === "custom") custom.push(state.sounds[index]);
         else builtin.push(state.sounds[index]);
-        if (state.sounds[index].file === config.sound) currentSelected = true;
       }
       function optionOf(item) {
         return h("option", { key: item.file, value: item.file }, item.label || item.file);
       }
-      var groups = [];
-      if (builtin.length > 0) groups.push(h("optgroup", { key: "g-builtin", label: "内置音效" }, builtin.map(optionOf)));
-      if (custom.length > 0) groups.push(h("optgroup", { key: "g-custom", label: "自定义目录" }, custom.map(optionOf)));
-      if (!currentSelected && config.sound) groups.push(h("option", { key: "g-current", value: config.sound }, config.sound + "（当前音效）"));
-
-      var soundControl = [
-        h("select", {
-          key: "sel",
-          className: "__snd_select",
-          value: config.sound,
-          disabled: state.sounds.length === 0,
-          onChange: function (event) { save({ sound: event.target.value }, "音效内容"); },
-        }, groups),
-        h("button", { key: "try", type: "button", className: "__snd_btn", onClick: function () { preview(config.sound); } }, "试听"),
-      ];
+      function eventControl(kind, title) {
+        var item = config.events[kind];
+        var groups = [];
+        if (builtin.length > 0) groups.push(h("optgroup", { key: "g-builtin", label: "内置音效" }, builtin.map(optionOf)));
+        if (custom.length > 0) groups.push(h("optgroup", { key: "g-custom", label: "自定义目录" }, custom.map(optionOf)));
+        if (!state.sounds.some(function (row) { return row.file === item.sound; })) {
+          groups.push(h("option", { key: "g-current", value: item.sound }, item.sound + "（当前音效）"));
+        }
+        return [
+          switchButton(item.enabled, function () {
+            var events = {}; events[kind] = { enabled: !item.enabled };
+            save({ events: events }, title + "开关");
+          }, title),
+          h("select", {
+            key: "sel-" + kind, className: "__snd_select", value: item.sound,
+            disabled: state.sounds.length === 0,
+            onChange: function (event) {
+              var events = {}; events[kind] = { sound: event.target.value };
+              save({ events: events }, title + "音效");
+            },
+          }, groups),
+          h("button", { key: "try-" + kind, type: "button", className: "__snd_btn", onClick: function () { preview(item.sound); } }, "试听"),
+        ];
+      }
       var volumeControl = [
         h("input", {
           key: "vol",
@@ -219,10 +233,13 @@ window.__ModuleLoader__.load({
       ];
       var statusText = state.error ? state.error : (state.notice || "");
       return h("div", { className: "__snd_root" }, [
-        h("p", { key: "hint", className: "__snd_hint" }, "提示音由桌面端播放：不受浏览器自动播放限制；任何会话（含后台会话、子代理回合、用户中断与审批/提问等待）一完成就出声。音量只作用于提示音，不改系统音量。"),
-        row("会话完成时播放音效", "关闭后所有会话完成都不再出声；试听仍可用。", switchButton(config.enabled, function () { save({ enabled: !config.enabled }, "开关"); })),
+        h("p", { key: "hint", className: "__snd_hint" }, "提示音由桌面端播放。仅顶层任务触发，子代理、自动重试和历史事件不会重复出声。"),
+        row("提示音总开关", "关闭后所有自动提示静音；试听仍可用。", switchButton(config.enabled, function () { save({ enabled: !config.enabled }, "总开关"); }, "提示音总开关")),
         row("音量", "0–100，只影响提示音，不动系统音量。", volumeControl),
-        row("音效内容", "默认沿用现有提示音；下拉列出内置音效与自定义目录里的 wav。", soundControl),
+        row("任务完成", "顶层任务成功完成时播放。", eventControl("complete", "任务完成")),
+        row("手动中断", "你主动停止顶层任务时播放。", eventControl("interrupted", "手动中断")),
+        row("等待询问", "需要回答问题或授权时播放，同一请求只响一次。", eventControl("question", "等待询问")),
+        row("任务错误", "顶层任务最终失败时播放；自动重试和普通工具错误不播放。", eventControl("error", "任务错误")),
         row("自定义音效目录", state.customDirIsDefault ? "当前使用默认目录（DSH 数据目录下的 sounds）。填目录后扫描其中的 *.wav。" : "扫描该目录下的 *.wav。", dirControl),
         h("div", { key: "status", className: state.error ? "__snd_status __snd_err" : "__snd_status" }, statusText),
       ]);
@@ -237,12 +254,12 @@ window.__ModuleLoader__.load({
         h("div", { className: "__snd_ctl" }, control));
     }
 
-    function switchButton(on, onClick) {
+    function switchButton(on, onClick, label) {
       return h("button", {
         type: "button",
         role: "switch",
         "aria-checked": on,
-        "aria-label": "会话完成时播放音效",
+        "aria-label": label || "播放音效",
         className: "__snd_switch",
         style: { background: on ? "var(--dsw-alias-state-business-primary)" : "var(--dsw-alias-bg-module-platform)" },
         onClick: onClick,

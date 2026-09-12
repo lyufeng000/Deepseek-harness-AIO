@@ -25,6 +25,7 @@ import { togglePluginInPatch, ensurePluginDisabledInPatch, removePluginFromPatch
 import { collectPluginRows } from './lib/plugin-manager-state';
 import { removeMarketDuplicate } from './lib/builtin-collision';
 import { assertProfileStartup, UPGRADE_TARGET } from './lib/profile-upgrade';
+import { migrateDeepSeekSettings } from './lib/deepseek-settings-migration';
 
 // AIO 核心内置插件（壳运行必需）：保护中心与启停管理。
 // 其他内置插件可被「插件 → 管理」移除，核心组拒绝移除。
@@ -346,6 +347,8 @@ export function createDesktopCore(ctx: DesktopCoreCtx) {
   /// 当前 profile 可用的插件包名：内置插件 + manifest 依赖 + node_modules 实际内容。
   function availablePluginNames(profileDirP: string): Set<string> {
     const names = new Set<string>();
+    // 官方基础 bundle 由安装闭包提供，不一定实体复制进用户 profile。
+    for (const name of DESKTOP_PROFILE_BUNDLES) names.add(name);
     for (const entry of COMPANION_PLUGINS) names.add(entry.name);
     const manifest = readJsonFile(path.join(profileDirP, 'package.json'));
     const dependencies = manifest && typeof manifest.dependencies === 'object' ? manifest.dependencies : {};
@@ -441,6 +444,12 @@ export function createDesktopCore(ctx: DesktopCoreCtx) {
   function syncCompanionPluginsOnce(): void {
     // 桌面专属 profile 必须先存在（未知 profile 不会被 dsh 自动初始化）。
     ensureDesktopProfileInit();
+    try {
+      const migrated = migrateDeepSeekSettings(dshHome);
+      if (migrated.changed) log('boot', '已将 DeepSeek 设置迁移到 providers.deepseek-official；原文已备份');
+    } catch (err) {
+      throw new Error('DeepSeek 设置迁移失败，已保留原文件: ' + (err instanceof Error ? err.message : String(err)));
+    }
     const profileDirP = desktopProfileDir();
     // 内置社区 agent preset：安装到用户 preset 根（已存在则跳过，用户优先）。
     const presetsSynced = syncBundledPresets(

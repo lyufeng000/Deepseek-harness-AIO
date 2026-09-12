@@ -116,12 +116,11 @@ const PROMOTE_EVENTS = {
 const ALLOWED_KEYS = new Set(['bootstrapTools', 'promoteOn', 'bootstrapMaxTokens', 'suppressedContextSources', 'compactionTools'])
 
 /**
- * Context sources stripped from the first request by default. Both are
- * automatic `agent/pre-step` injections: the available-skills reminder
- * (`skill-catalog`) and the AGENTS.md/CLAUDE.md workspace digest
- * (`agent-instructions`). True Minimal mounts neither plugin.
+ * Context sources stripped from the first request by default. The available-
+ * skills reminder (`skill-catalog`) is intentionally omitted from the anchor;
+ * workspace instructions remain as hidden instruction context.
  */
-const DEFAULT_SUPPRESSED_SOURCES = ['skill-catalog', 'agent-instructions']
+const DEFAULT_SUPPRESSED_SOURCES = ['skill-catalog']
 
 /**
  * The default first-request catalog: the OFFICIAL Minimal preset's exact tool

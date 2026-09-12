@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * session-motion 残留变换补丁（@dsh-external/dsh-webui@0.5.1）。
+ * session-motion 重复动画移除补丁（@dsh-external/dsh-webui@0.5.1）。
  *
  * 现状：插件 `src/client/session-motion.ts` 给会话内容区注入
  *
@@ -20,9 +20,9 @@
  *    rect 被位移而滚动端口 rect 不变，量出的锚点最多偏 10px，切换会话后的
  *    定位/回底会把偏差写进滚动账本 —— 症状就是滚动消息区时抽动一下。
  *
- * 本补丁把两处入场动画的 fill 改为 backwards（动画结束即回到常态样式），并把
- * 关键帧收尾从 translateY(0) 改成 none：入场观感不变（仍是淡入 + 10px 上浮），
- * 但播完不再留下变换、包含块或合成层。
+ * 客制化 UI 已经为同一消息区域提供动效开关。这里关闭 WebUI 自己的内容区和
+ * 标题区进场动画，避免两套动画同时改写滚动定位所依赖的祖先盒。客制化消息
+ * 动效在 staging 补丁中固定为纯透明度，不再施加位移或缩放。
  *
  * 只作用于 staging 的 seed 副本或用户 profile 副本；版本/指纹不符时 fail
  * closed，重复执行只验证已应用内容，不产生额外改写。
@@ -36,25 +36,20 @@ const VERSION = '0.5.1';
 const NAME = '@dsh-external/dsh-webui';
 const REGION = '//#region src/client/session-motion.ts';
 const END = '//#endregion';
-const MARKER = '/* EAC_SESSION_MOTION_NO_RESIDUAL_V1 */';
+const MARKER = '/* EAC_SESSION_MOTION_DISABLED_V2 */';
 const SOURCE_HASH = 'dd92c2d9addae33f84ebdd191a985ee0385a949e99d17525761900e967c87b94';
 
-// 三条替换全部落在 session-motion 源码区段内，且在该区段里各只出现一次。
+// 两条替换全部落在 session-motion 源码区段内，且在该区段里各只出现一次。
 const EDITS = [
   [
     '  animation: dsh-webui-swap-in 400ms cubic-bezier(0.16, 1, 0.3, 1) both;\n}',
-    '  animation: dsh-webui-swap-in 400ms cubic-bezier(0.16, 1, 0.3, 1) backwards;\n}\n'
+    '  animation: none;\n}\n'
       + MARKER,
     1,
   ],
   [
-    '  to { opacity: 1; transform: translateY(0); }',
-    '  to { opacity: 1; transform: none; }',
-    1,
-  ],
-  [
     '  animation: dsh-webui-swap-fade 300ms ease-out both;',
-    '  animation: dsh-webui-swap-fade 300ms ease-out backwards;',
+    '  animation: none; /* EAC_SESSION_MOTION_HEADER_DISABLED_V2 */',
     1,
   ],
 ];
@@ -72,7 +67,7 @@ function hash(source) {
 }
 
 /**
- * 把已验证的 0.5.1 客户端包改成「入场动画不残留变换」；已打过补丁时只校验。
+ * 把已验证的 0.5.1 客户端包改成「WebUI 不重复控制消息区域动效」；已打过补丁时只校验。
  * @param source - lib/client.js 文本。
  * @param metadata - 该包 package.json 内容。
  * @returns {{ source: string, changed: boolean }} 新文本与是否需要写盘。

@@ -2,8 +2,7 @@
 
 // 受控种子补丁的幂等性与边界测试。
 //
-// 补丁 1：dsh-llm-deepseek 模型默认 inputModalities 含 image（原生多模态）。
-// 补丁 2：dsh-webui 辅助视觉自动降级默认关闭（图片交给原生模型解析）。
+// 受控补丁必须精确命中审核种子，并保持幂等。
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,8 +14,6 @@ import { applySeedPatches, SEED_PATCHES } from '../scripts/seed-kernel-patches.m
 const DEEPSEEK_MODULE = ['profiles', 'web-desktop', 'node_modules', '@deepseek-ai', 'dsh-llm-deepseek', 'lib', 'index.js'];
 const WEBUI_VISION_HELPER = ['profiles', 'web-desktop', 'node_modules', '@dsh-external', 'dsh-webui', 'lib', 'vision-helper.js'];
 
-const FROM = 'inputModalities: z.array(z.union(MODEL_MODALITIES)).min(1).default(["text"]),';
-const TO = 'inputModalities: z.array(z.union(MODEL_MODALITIES)).min(1).default(["text","image"]),';
 const VISION_FROM = 'textModelImageFallback: z.boolean().default(true),';
 const VISION_TO = 'textModelImageFallback: z.boolean().default(false),';
 
@@ -31,40 +28,52 @@ function seedWith(t, files = {}) {
   return root;
 }
 
-const deepseekBody = (anchor = FROM) => `const catalogModel = z.object({\n  ${anchor}\n});\n`;
 const visionBody = (anchor = VISION_FROM) => `export const Config = z.object({\n    ${anchor}\n});\n`;
 
-test('补丁清单声明七个受控目标，路径与文件名稳定', () => {
-  assert.deepEqual(SEED_PATCHES.map((p) => p.id), ['deepseek-native-image', 'webui-vision-fallback-off', 'status-rotator-pill-default-off', 'status-rotator-example-pill-off', 'status-rotator-settings-inject', 'webui-done-sound-row-remove', 'webui-done-sound-reporting-remove']);
+test('补丁清单覆盖本轮全部事实源，路径稳定', () => {
+  const ids = new Set(SEED_PATCHES.map((p) => p.id));
+  for (const id of [
+    'deepseek-flash-model-id', 'deepseek-model-common-input-field',
+    'deepseek-known-model-capabilities', 'deepseek-config-schema-wrapper',
+    'deepseek-config-settings-path', 'deepseek-onboarding-nested-path',
+    'agent-instructions-init-refresh',
+    'provider-deepseek-official-icon', 'webui-markdown-stable-layout',
+    'webui-markdown-no-node-virtualization', 'custom-motion-transcript-fade-only',
+    'custom-marketplace-default-url', 'webui-vision-fallback-off',
+  ]) assert.ok(ids.has(id), `missing ${id}`);
   assert.deepEqual(SEED_PATCHES[0].file, DEEPSEEK_MODULE);
-  assert.deepEqual(SEED_PATCHES[1].file, WEBUI_VISION_HELPER);
+  assert.deepEqual(SEED_PATCHES.find((p) => p.id === 'webui-vision-fallback-off').file, WEBUI_VISION_HELPER);
 });
 
 test('打包编排对 staging 副本执行全部受控补丁', () => {
   const source = fs.readFileSync(new URL('../scripts/prepare-aio.mjs', import.meta.url), 'utf8');
   assert.match(source, /import \{ applySeedPatches \} from '\.\/seed-kernel-patches\.mjs';/);
-  assert.match(source, /applySeedPatches\(resolve\('tauri-app\/resources\/profile-seed'\)\)/);
+  assert.match(source, /applySeedPatches\(resolve\('tauri-app\/resources\/profile-seed'\), \{ strict: true \}\)/);
   assert.ok(!source.includes('patchSeedKernel('), 'staging 必须执行全部受控补丁，不能只跑 DeepSeek 补丁');
 });
 
-test('补丁把 DeepSeek 模型默认 inputModalities 改为包含 image，且幂等', (t) => {
-  const root = seedWith(t, { [DEEPSEEK_MODULE.join('/')]: deepseekBody() });
+test('DeepSeek 补丁统一配置路径和 input 字段，并精确声明 Flash 图片能力', (t) => {
+  const patches = SEED_PATCHES.filter((p) => p.file === DEEPSEEK_MODULE || JSON.stringify(p.file) === JSON.stringify(DEEPSEEK_MODULE));
+  const body = patches.map((p) => p.count === 2 ? `${p.from}\n${p.from}` : p.from).join('\n');
+  const root = seedWith(t, { [DEEPSEEK_MODULE.join('/')]: body });
   const file = path.join(root, ...DEEPSEEK_MODULE);
-  const first = applySeedPatches(root)[0];
-  assert.equal(first.applied, true);
-  assert.equal(first.id, 'deepseek-native-image');
+  const first = applySeedPatches(root);
+  for (const patch of patches) assert.equal(first.find((row) => row.id === patch.id).applied, true, patch.id);
   const patched = fs.readFileSync(file, 'utf8');
-  assert.ok(patched.includes(TO));
-  assert.ok(!patched.includes(FROM));
-  const second = applySeedPatches(root)[0];
-  assert.equal(second.applied, false);
-  assert.equal(second.reason, 'already patched');
+  assert.match(patched, /id: "deepseek-flash"[\s\S]*?input: \["text", "image"\]/);
+  assert.match(patched, /const Config = z\.object\(\{ providers: z\.dict\(ProviderConfig\)/);
+  assert.match(patched, /settingsPath: \["providers", PROVIDER\]/);
+  assert.match(patched, /model\.input \?\?/);
+  assert.ok(!patched.includes('\tinputModalities: z.array'));
+  const second = applySeedPatches(root);
+  for (const patch of patches) assert.equal(second.find((row) => row.id === patch.id).reason, 'already patched', patch.id);
   assert.equal(fs.readFileSync(file, 'utf8'), patched);
 });
 
-test('DeepSeek 目标文件缺失或上游代码变化时安全跳过且不写文件', (t) => {
+test('普通检查可报告缺失；打包严格模式会阻断关键补丁漂移', (t) => {
   const missing = seedWith(t);
-  assert.deepEqual(applySeedPatches(missing)[0], { id: 'deepseek-native-image', applied: false, reason: 'dsh-llm-deepseek module not present' });
+  assert.deepEqual(applySeedPatches(missing)[0], { id: 'deepseek-flash-model-id', applied: false, reason: 'dsh-llm-deepseek module not present' });
+  assert.throws(() => applySeedPatches(missing, { strict: true }), /Required seed patches did not match/);
 
   const changed = seedWith(t, { [DEEPSEEK_MODULE.join('/')]: 'const unrelated = true;\n' });
   const before = fs.readFileSync(path.join(changed, ...DEEPSEEK_MODULE), 'utf8');
@@ -77,34 +86,32 @@ test('DeepSeek 目标文件缺失或上游代码变化时安全跳过且不写�
 test('补丁关闭 dsh-webui 辅助视觉自动降级，且幂等', (t) => {
   const root = seedWith(t, { [WEBUI_VISION_HELPER.join('/')]: visionBody() });
   const file = path.join(root, ...WEBUI_VISION_HELPER);
-  const [deepseek, vision] = applySeedPatches(root);
-  assert.equal(deepseek.applied, false);
-  assert.equal(deepseek.reason, 'dsh-llm-deepseek module not present');
+  const results = applySeedPatches(root);
+  const vision = results.find((row) => row.id === 'webui-vision-fallback-off');
   assert.equal(vision.id, 'webui-vision-fallback-off');
   assert.equal(vision.applied, true);
   const patched = fs.readFileSync(file, 'utf8');
   assert.ok(patched.includes(VISION_TO));
   assert.ok(!patched.includes(VISION_FROM));
-  const second = applySeedPatches(root)[1];
+  const second = applySeedPatches(root).find((row) => row.id === 'webui-vision-fallback-off');
   assert.equal(second.applied, false);
   assert.equal(second.reason, 'already patched');
   assert.equal(fs.readFileSync(file, 'utf8'), patched);
 });
 
 test('dsh-webui 目标缺失或上游改写时只跳过该补丁，不影响 DeepSeek 补丁', (t) => {
-  const root = seedWith(t, { [DEEPSEEK_MODULE.join('/')]: deepseekBody('upstream reworded'), [WEBUI_VISION_HELPER.join('/')]: 'unrelated\n' });
-  const [deepseek, vision] = applySeedPatches(root);
-  assert.equal(deepseek.applied, false);
-  assert.match(deepseek.reason, /target default not found/);
+  const root = seedWith(t, { [DEEPSEEK_MODULE.join('/')]: 'upstream reworded\n', [WEBUI_VISION_HELPER.join('/')]: 'unrelated\n' });
+  const results = applySeedPatches(root);
+  const vision = results.find((row) => row.id === 'webui-vision-fallback-off');
   assert.equal(vision.applied, false);
   assert.match(vision.reason, /target default not found/);
   assert.equal(fs.readFileSync(path.join(root, ...WEBUI_VISION_HELPER), 'utf8'), 'unrelated\n');
 
   const missing = seedWith(t);
-  const results = applySeedPatches(missing);
-  assert.deepEqual(results.map((r) => r.id), ['deepseek-native-image', 'webui-vision-fallback-off', 'status-rotator-pill-default-off', 'status-rotator-example-pill-off', 'status-rotator-settings-inject', 'webui-done-sound-row-remove', 'webui-done-sound-reporting-remove']);
-  assert.ok(results.every((r) => r.applied === false));
-  assert.deepEqual(results[1].reason, 'dsh-webui vision-helper module not present');
+  const missingResults = applySeedPatches(missing);
+  assert.ok(missingResults.some((r) => r.id === 'custom-marketplace-default-url'));
+  assert.ok(missingResults.every((r) => r.applied === false));
+  assert.equal(missingResults.find((r) => r.id === 'webui-vision-fallback-off').reason, 'dsh-webui vision-helper module not present');
 });
 
 test('补丁关闭 status-rotator Pill 默认值并改 inject，且幂等', (t) => {

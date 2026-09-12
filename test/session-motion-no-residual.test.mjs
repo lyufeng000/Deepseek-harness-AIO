@@ -120,12 +120,9 @@ test('real bundle: strict transform, syntax, idempotence and isolated apply',
       expected = expected.replace(editBefore, editAfter);
     }
     assert.equal(region, expected,
-      'the patched region must be the original region plus exactly the three edits');
+      'the patched region must be the original region plus the controlled edits');
     assert.equal(region.split(MARKER).length - 1, 1);
-    assert.ok(region.includes('animation: dsh-webui-swap-in 400ms cubic-bezier(0.16, 1, 0.3, 1) backwards;'));
-    assert.ok(region.includes('animation: dsh-webui-swap-fade 300ms ease-out backwards;'));
-    assert.ok(region.includes('to { opacity: 1; transform: none; }'));
-    assert.equal(region.includes('both;'), false, 'no animation may keep a permanent fill');
+    for (const [, after] of EDITS) assert.ok(region.includes(after));
     // 幂等：第二次只校验。
     assert.deepEqual(transform(result.source, realMetadata), { source: result.source, changed: false });
     // CRLF 往返。

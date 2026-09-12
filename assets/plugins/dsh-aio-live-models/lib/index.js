@@ -13,6 +13,11 @@ const DEFAULT_BASE_URL = 'https://api.deepseek.com';
 const DEFAULT_API_KEY_ENV = 'DEEPSEEK_API_KEY';
 const DEFAULT_CONTEXT_WINDOW = 262144; // 256k：发现结果只带基础字段，上下文窗口按默认给
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
+const OFFICIAL_IMAGE_MODELS = new Set([
+  'deepseek-flash',
+  'deepseek-v4-flash',
+  'deepseek-v4-flash-vision-exp',
+]);
 
 function trimTrailingSlashes(value) {
   return String(value).replace(/\/+$/, '');
@@ -42,6 +47,7 @@ function toDiscoveredModels(payload) {
     if (id.length === 0 || seen.has(id)) continue;
     seen.add(id);
     const model = { id, contextWindow: DEFAULT_CONTEXT_WINDOW };
+    if (OFFICIAL_IMAGE_MODELS.has(id)) model.inputModalities = ['text', 'image'];
     if (row && typeof row === 'object' && typeof row.name === 'string' && row.name.length > 0) {
       model.name = row.name;
     }
@@ -57,7 +63,8 @@ function apply(ctx) {
   const deepseekSettings = () => {
     try {
       const settings = ctx.get('settings');
-      return settings && typeof settings.get === 'function' ? settings.get('llm-deepseek') || {} : {};
+      const section = settings && typeof settings.get === 'function' ? settings.get('llm-deepseek') || {} : {};
+      return section.providers?.['deepseek-official'] ?? section;
     } catch {
       return {};
     }

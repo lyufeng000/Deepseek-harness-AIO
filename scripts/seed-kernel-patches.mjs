@@ -1,40 +1,86 @@
 // 受控种子补丁：只作用于打包进应用的 profile seed 副本，不改上游审核快照。
 //
-// 前提：DeepSeek 已提供原生多模态。图片应当由当前选中的模型直接理解，
-// 不再依赖「专门的图像解析模型」把图片转写成文本。据此打两个补丁：
-//
-// 补丁 1 deepseek-native-image：
-//   DeepSeek 官方 provider 的模型目录默认 `inputModalities` 由 ["text"] 改为
-//   ["text","image"]。静态默认模型与实时发现采纳的新模型都会声明图片输入，
-//   使内核原生 ImageBlock → provider image_url/file_id 链路生效，read_image
-//   工具与附件准入也按此模态放行。定价仍由用户在余额定价面板手动补充；
-//   上下文窗口由发现结果按 256k 给出。
-//
-// 补丁 2 webui-vision-fallback-off：
-//   `dsh-webui` 辅助视觉的自动降级 `textModelImageFallback` 默认由 true 改为
-//   false。该降级会绕过主模型能力、把附件图片交给另一个视觉模型（默认
-//   sensenova/sensenova-6.8-flash-lite）转写成文本，并包装 resolveModelInfo
-//   掩盖真实模态——这正是「专门的图像解析模型」。关闭后图片一律交给原生模型；
-//   模型确实不支持图片时由内核按原生规则拒绝，`vision_describe` 工具仍可按需
-//   显式调用（浏览器截图等场景不受影响）。
+// 本文件集中维护不能直接改写审核上游快照的发行差异：DeepSeek 官方 Flash
+// 型号能力和统一配置路径、供应商图标、原生视觉链路、会话滚动稳定性、旧提示音
+// 移除，以及客制化插件市场来源和缓存。打包使用 strict 模式，任一锚点漂移即
+// 阻断，避免“源码已修但 staging 未带上”。
 import fs from 'node:fs';
 import path from 'node:path';
 
 const DEEPSEEK_MODULE = ['profiles', 'web-desktop', 'node_modules', '@deepseek-ai', 'dsh-llm-deepseek', 'lib', 'index.js'];
+const AGENT_INSTRUCTIONS_MODULE = ['profiles', 'web-desktop', 'node_modules', '@deepseek-ai', 'dsh-agent-instructions', 'lib', 'index.js'];
 const WEBUI_VISION_HELPER = ['profiles', 'web-desktop', 'node_modules', '@dsh-external', 'dsh-webui', 'lib', 'vision-helper.js'];
 const STATUS_ROTATOR_CLIENT = ['profiles', 'web-desktop', 'node_modules', 'dsh-status-rotator', 'lib', 'client.js'];
 const STATUS_ROTATOR_HOST = ['profiles', 'web-desktop', 'node_modules', 'dsh-status-rotator', 'lib', 'index.js'];
 const STATUS_ROTATOR_EXAMPLE = ['profiles', 'web-desktop', 'node_modules', 'dsh-status-rotator', 'config.example.json'];
 const WEBUI_CLIENT = ['profiles', 'web-desktop', 'node_modules', '@dsh-external', 'dsh-webui', 'lib', 'client.js'];
+const MODELS_UI_CLIENT = ['profiles', 'web-desktop', 'node_modules', '@deepseek-ai', 'dsh-client-ui-settings-models', 'lib', 'client.js'];
+const CUSTOM_CLIENT = ['profiles', 'web-desktop', 'node_modules', '@ha-na-bi', 'dsh-client-ui-custom', 'lib', 'client.js'];
 
-/** 受控补丁清单：稳定锚点、幂等替换，目标缺失或上游改写时安全跳过。 */
+/** 受控补丁清单：稳定锚点、幂等替换；打包阶段要求全部命中。 */
 export const SEED_PATCHES = Object.freeze([
   Object.freeze({
-    id: 'deepseek-native-image',
+    id: 'deepseek-flash-model-id',
     file: DEEPSEEK_MODULE,
     label: 'dsh-llm-deepseek module',
-    from: 'inputModalities: z.array(z.union(MODEL_MODALITIES)).min(1).default(["text"]),',
-    to: 'inputModalities: z.array(z.union(MODEL_MODALITIES)).min(1).default(["text","image"]),',
+    from: 'id: "deepseek-v4-flash",\n\t\tname: "DeepSeek-V4-Flash",',
+    to: 'id: "deepseek-flash",\n\t\tname: "DeepSeek-Flash",\n\t\tinput: ["text", "image"],\n\t\timagePixelBudget: DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,\n\t\timageMaxBytes: DEFAULT_REQUEST_IMAGE_MAX_BYTES,',
+  }),
+  Object.freeze({
+    id: 'deepseek-flash-legacy-alias',
+    file: DEEPSEEK_MODULE,
+    label: 'dsh-llm-deepseek module',
+    from: 'id: "deepseek-v4-flash-vision-exp",',
+    to: 'id: "deepseek-v4-flash",\n\t\tname: "DeepSeek-V4-Flash (Legacy alias)",\n\t\tcontextWindow: DEFAULT_CONTEXT_WINDOW,\n\t\tinput: ["text", "image"],\n\t\timagePixelBudget: DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,\n\t\timageMaxBytes: DEFAULT_REQUEST_IMAGE_MAX_BYTES\n\t},\n\t{\n\t\tid: "deepseek-v4-flash-vision-exp",',
+  }),
+  Object.freeze({
+    id: 'deepseek-model-common-input-field',
+    file: DEEPSEEK_MODULE,
+    label: 'dsh-llm-deepseek module',
+    from: '\tinputModalities: z.array(z.union(MODEL_MODALITIES)).min(1).default(["text"]),',
+    to: '\tinput: z.array(z.union(MODEL_MODALITIES)).min(1),',
+  }),
+  Object.freeze({
+    id: 'deepseek-legacy-vision-common-input',
+    file: DEEPSEEK_MODULE,
+    label: 'dsh-llm-deepseek module',
+    from: '\t\tinputModalities: ["text", "image"],',
+    to: '\t\tinput: ["text", "image"], // EAC_DEEPSEEK_LEGACY_VISION_INPUT_V1',
+  }),
+  Object.freeze({
+    id: 'deepseek-known-model-capabilities',
+    file: DEEPSEEK_MODULE,
+    label: 'dsh-llm-deepseek module',
+    from: '\t\tconst inputModalities = model.inputModalities ?? ["text"];',
+    to: '\t\tconst inputModalities = model.input ?? (["deepseek-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp"].includes(model.id) ? ["text", "image"] : ["text"]);',
+  }),
+  Object.freeze({
+    id: 'deepseek-config-schema-nested',
+    file: DEEPSEEK_MODULE,
+    label: 'dsh-llm-deepseek module',
+    from: 'const Config = z.object({\n\tapiKeyEnv:',
+    to: 'const ProviderConfig = z.object({\n\tapiKeyEnv:',
+  }),
+  Object.freeze({
+    id: 'deepseek-config-schema-wrapper',
+    file: DEEPSEEK_MODULE,
+    label: 'dsh-llm-deepseek module',
+    from: '\tretryPolicy: RetryPolicySchema\n});\n/** Public API default;',
+    to: '\tretryPolicy: RetryPolicySchema\n});\nconst Config = z.object({ providers: z.dict(ProviderConfig).default({}) });\n/** Public API default;',
+  }),
+  Object.freeze({
+    id: 'deepseek-config-read-nested',
+    file: DEEPSEEK_MODULE,
+    label: 'dsh-llm-deepseek module',
+    from: 'function resolveAdapterOptions(config, environment) {\n\tif (config.thinking',
+    to: 'function resolveAdapterOptions(config, environment) {\n\tconfig = config?.providers?.[PROVIDER] ?? config ?? {};\n\tif (config.thinking',
+  }),
+  Object.freeze({
+    id: 'deepseek-config-settings-path',
+    file: DEEPSEEK_MODULE,
+    label: 'dsh-llm-deepseek module',
+    from: '\t\tsettingsNs: NS,\n\t\tsettingsPath: []',
+    to: '\t\tsettingsNs: NS,\n\t\tsettingsPath: ["providers", PROVIDER]',
   }),
   Object.freeze({
     id: 'webui-vision-fallback-off',
@@ -78,6 +124,106 @@ export const SEED_PATCHES = Object.freeze([
     from: "\t\t\tctx.slots.inject(\"conversation.chat.turnTail\", () => ctx.slots.register({\r\n\t\t\t\tname: \"conversation.chat.turnTail\",\r\n\t\t\t\tselect: (owner) => ({\r\n\t\t\t\t\tturn: owner.turn.turn,\r\n\t\t\t\t\tendedAt: owner.turn.end === void 0 ? 0 : owner.turn.end.time\r\n\t\t\t\t})\r\n\t\t\t}, TurnDoneSound));",
     to: "\t\t\t// EAC_AIO_SOUND_OWNER_V1: 会话完成提示音改由 dsh-aio-sound 在 host 端统一播放（含后台会话）。",
   }),
+  Object.freeze({
+    id: 'provider-deepseek-official-icon',
+    file: WEBUI_CLIENT,
+    label: 'dsh-webui provider icon map',
+    from: '"deepseek": "deepseek",',
+    to: '"deepseek": "deepseek",\n\t\t\t"deepseek-official": "deepseek",',
+  }),
+  Object.freeze({
+    id: 'deepseek-onboarding-nested-path',
+    file: MODELS_UI_CLIENT,
+    label: 'dsh-client-ui-settings-models DeepSeek onboarding',
+    from: 'candidate.entry.provider === "deepseek-official" && candidate.entry.settingsNs === "llm-deepseek" && candidate.entry.settingsPath.length === 0',
+    to: 'candidate.entry.provider === "deepseek-official" && candidate.entry.settingsNs === "llm-deepseek" && candidate.entry.settingsPath.join(".") === "providers.deepseek-official"',
+    all: true,
+    count: 2,
+  }),
+  Object.freeze({
+    id: 'agent-instructions-init-refresh',
+    file: AGENT_INSTRUCTIONS_MODULE,
+    label: 'dsh-agent-instructions /init refresh bridge',
+    from: '\tctx.on("agent/pre-step", async ({ agent, messages, step, signal }, next) => {\n\t\tconst decision = await next();',
+    to: '\tctx.on("agent/pre-step", async ({ agent, messages, step, signal }, next) => {\n\t\tconst refreshSessions = globalThis[Symbol.for("dsh.eac.agent-instructions.refresh.v1")];\n\t\tif (refreshSessions instanceof WeakSet && refreshSessions.delete(agent.session)) {\n\t\t\tbaselinePreparations.delete(agent.session);\n\t\t\tinstructionVersions.delete(agent.session);\n\t\t}\n\t\tconst decision = await next();',
+  }),
+  Object.freeze({
+    id: 'webui-markdown-stable-layout',
+    file: WEBUI_CLIENT,
+    label: 'dsh-webui markdown renderer',
+    from: ':where(.markstream-react).markdown-renderer{position:relative;contain:layout;content-visibility:auto;contain-intrinsic-size:800px 600px}',
+    to: ':where(.markstream-react).markdown-renderer{position:relative;contain:layout;content-visibility:visible;contain-intrinsic-size:auto}',
+  }),
+  Object.freeze({
+    id: 'webui-markdown-no-node-virtualization',
+    file: WEBUI_CLIENT,
+    label: 'dsh-webui markdown renderer',
+    from: 'deferNodesUntilVisible: !0,\n\t\t\tmaxLiveNodes: 320,',
+    to: 'deferNodesUntilVisible: false,\n\t\t\tmaxLiveNodes: 0,',
+  }),
+  Object.freeze({
+    id: 'custom-motion-transcript-fade-only',
+    file: CUSTOM_CLIENT,
+    label: 'dsh-client-ui-custom motion',
+    from: 'const styleCls = styleClass(ordered[0] !== void 0 && isTreeItem(ordered[0]) ? state.sidebarStyle : state.style);',
+    to: 'const styleCls = styleClass(ordered[0] !== void 0 && isTreeItem(ordered[0]) ? state.sidebarStyle : "fade");',
+  }),
+  Object.freeze({
+    id: 'custom-motion-panel-fade-only',
+    file: CUSTOM_CLIENT,
+    label: 'dsh-client-ui-custom motion',
+    from: '@keyframes xO0q6W_dsu-motion-panel{0%{opacity:.4;transform:translateY(6px)}to{opacity:1;transform:none}}',
+    to: '@keyframes xO0q6W_dsu-motion-panel{0%{opacity:.4}to{opacity:1}}',
+  }),
+  Object.freeze({
+    id: 'custom-marketplace-default-url',
+    file: CUSTOM_CLIENT,
+    label: 'dsh-client-ui-custom marketplace',
+    from: 'https://raw.githubusercontent.com/deepseek-ai/deepseek-harness/master/packages/client/ui-custom/marketplace.json',
+    to: 'https://raw.githubusercontent.com/Yoli-mi/dsh-client-ui-custom/main/marketplace.json',
+  }),
+  Object.freeze({
+    id: 'custom-marketplace-cache-helpers',
+    file: CUSTOM_CLIENT,
+    label: 'dsh-client-ui-custom marketplace cache',
+    from: '\t\t/** Bridges the catalog + inventory + clipboard onto the tab. */\n\t\tvar MarketplaceController = class {',
+    to: '\t\tconst MARKETPLACE_CACHE_KEY = "dsh.marketplace.last-valid.v1";\n\t\tfunction readMarketplaceCache() {\n\t\t\ttry {\n\t\t\t\tconst value = JSON.parse(localStorage.getItem(MARKETPLACE_CACHE_KEY) ?? "null");\n\t\t\t\tif (value === null || !Array.isArray(value.entries) || typeof value.savedAt !== "string") return null;\n\t\t\t\tif (value.entries.some((entry) => entry === null || typeof entry.id !== "string" || typeof entry.name !== "string" || typeof entry.package !== "string" || typeof entry.repoUrl !== "string" || typeof entry.installYaml !== "string")) return null;\n\t\t\t\treturn value;\n\t\t\t} catch { return null; }\n\t\t}\n\t\tfunction writeMarketplaceCache(entries) {\n\t\t\ttry { localStorage.setItem(MARKETPLACE_CACHE_KEY, JSON.stringify({ savedAt: (/* @__PURE__ */ new Date()).toISOString(), entries })); } catch {}\n\t\t}\n\t\t/** Bridges the catalog + inventory + clipboard onto the tab. */\n\t\tvar MarketplaceController = class {',
+  }),
+  Object.freeze({
+    id: 'custom-marketplace-cache-initial-state',
+    file: CUSTOM_CLIENT,
+    label: 'dsh-client-ui-custom marketplace cache',
+    from: '\t\t\t\tthis.store = (0, _deepseek_ai_dsh_client_runtime_client.createSnapshotStore)({\n\t\t\t\t\tentries: BUNDLED_MARKETPLACE,\n\t\t\t\t\tsource: "bundled",',
+    to: '\t\t\t\tconst cached = readMarketplaceCache();\n\t\t\t\tthis.store = (0, _deepseek_ai_dsh_client_runtime_client.createSnapshotStore)({\n\t\t\t\t\tentries: cached?.entries ?? BUNDLED_MARKETPLACE,\n\t\t\t\t\tsource: cached === null ? "bundled" : "remote",\n\t\t\t\t\tcacheTime: cached?.savedAt ?? null,',
+  }),
+  Object.freeze({
+    id: 'custom-marketplace-cache-refresh',
+    file: CUSTOM_CLIENT,
+    label: 'dsh-client-ui-custom marketplace cache',
+    from: '\t\t\t\tthis.store.update((state) => {\n\t\t\t\t\tstate.entries = merged.length > 0 ? merged : BUNDLED_MARKETPLACE;\n\t\t\t\t\tstate.source = merged.length > 0 ? "remote" : "bundled";\n\t\t\t\t\tstate.refreshing = false;',
+    to: '\t\t\t\tif (merged.length > 0) writeMarketplaceCache(merged);\n\t\t\t\tconst cached = merged.length === 0 ? readMarketplaceCache() : null;\n\t\t\t\tthis.store.update((state) => {\n\t\t\t\t\tstate.entries = merged.length > 0 ? merged : cached?.entries ?? BUNDLED_MARKETPLACE;\n\t\t\t\t\tstate.source = merged.length > 0 || cached !== null ? "remote" : "bundled";\n\t\t\t\t\tstate.cacheTime = merged.length > 0 ? (/* @__PURE__ */ new Date()).toISOString() : cached?.savedAt ?? null;\n\t\t\t\t\tstate.refreshing = false;',
+  }),
+  Object.freeze({
+    id: 'custom-marketplace-cache-label-zh',
+    file: CUSTOM_CLIENT,
+    label: 'dsh-client-ui-custom marketplace locale',
+    from: '\t\t\t"source.remote": "GitHub",\n\t\t\topenOnGitHub: "GitHub 源码",',
+    to: '\t\t\t"source.remote": "GitHub",\n\t\t\t"source.cache": "缓存时间",\n\t\t\topenOnGitHub: "GitHub 源码",',
+  }),
+  Object.freeze({
+    id: 'custom-marketplace-cache-label-en',
+    file: CUSTOM_CLIENT,
+    label: 'dsh-client-ui-custom marketplace locale',
+    from: '\t\t\t"source.remote": "GitHub",\n\t\t\topenOnGitHub: "Source on GitHub",',
+    to: '\t\t\t"source.remote": "GitHub",\n\t\t\t"source.cache": "Cached at",\n\t\t\topenOnGitHub: "Source on GitHub",',
+  }),
+  Object.freeze({
+    id: 'custom-marketplace-cache-time-ui',
+    file: CUSTOM_CLIENT,
+    label: 'dsh-client-ui-custom marketplace toolbar',
+    from: '\t\t\t\t\t\t\t\ttranslator(state.source === "remote" ? "source.remote" : "source.bundled"),\n\t\t\t\t\t\t\t\tstate.discoveredTotal !== null && ` · ${translator("total")}：${state.discoveredTotal}`',
+    to: '\t\t\t\t\t\t\t\ttranslator(state.source === "remote" ? "source.remote" : "source.bundled"),\n\t\t\t\t\t\t\t\tstate.discoveredTotal !== null && ` · ${translator("total")}：${state.discoveredTotal}`,\n\t\t\t\t\t\t\t\tstate.cacheTime !== null && ` · ${translator("source.cache")}：${new Date(state.cacheTime).toLocaleString()}`',
+  }),
 ]);
 
 /**
@@ -90,11 +236,17 @@ export const SEED_PATCHES = Object.freeze([
 function patchOnce(seedRoot, patch) {
   const file = path.join(seedRoot, ...patch.file);
   if (!fs.existsSync(file)) return { id: patch.id, applied: false, reason: `${patch.label} not present` };
-  let source = fs.readFileSync(file, 'utf8');
-  if (source.includes(patch.to)) return { id: patch.id, applied: false, reason: 'already patched', file };
-  if (!source.includes(patch.from)) return { id: patch.id, applied: false, reason: 'target default not found (upstream changed?)', file };
-  source = source.replace(patch.from, patch.to);
-  fs.writeFileSync(file, source);
+  const raw = fs.readFileSync(file, 'utf8');
+  const eol = raw.includes('\r\n') ? '\r\n' : '\n';
+  let source = raw.replace(/\r\n/g, '\n');
+  const from = patch.from.replace(/\r\n/g, '\n');
+  const to = patch.to.replace(/\r\n/g, '\n');
+  const expectedCount = patch.count ?? 1;
+  const occurrences = (haystack, needle) => haystack.split(needle).length - 1;
+  if (occurrences(source, to) === expectedCount) return { id: patch.id, applied: false, reason: 'already patched', file };
+  if (occurrences(source, from) !== expectedCount) return { id: patch.id, applied: false, reason: 'target default not found (upstream changed?)', file };
+  source = patch.all ? source.replaceAll(from, to) : source.replace(from, to);
+  fs.writeFileSync(file, eol === '\r\n' ? source.replace(/\n/g, '\r\n') : source);
   return { id: patch.id, applied: true, file };
 }
 
@@ -104,6 +256,13 @@ function patchOnce(seedRoot, patch) {
  * @param {string} seedRoot - path to the packaged profile seed (…/profile-seed).
  * @returns {{id: string, applied: boolean, reason?: string, file?: string}[]} one result per patch, in patch order.
  */
-export function applySeedPatches(seedRoot) {
-  return SEED_PATCHES.map((patch) => patchOnce(seedRoot, patch));
+export function applySeedPatches(seedRoot, options = {}) {
+  const results = SEED_PATCHES.map((patch) => patchOnce(seedRoot, patch));
+  if (options.strict === true) {
+    const failures = results.filter((result) => !result.applied && result.reason !== 'already patched');
+    if (failures.length > 0) {
+      throw new Error('Required seed patches did not match:\n' + failures.map((row) => `- ${row.id}: ${row.reason}`).join('\n'));
+    }
+  }
+  return results;
 }

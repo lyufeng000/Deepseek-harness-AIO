@@ -1,12 +1,12 @@
 // dsh-aio-sound — DSHEAC AIO 配套插件（host 半身）。
 //
-// 「音效」设置栏的服务端：会话完成提示音的播放、配置与音效清单。
+// 「音效」设置栏的服务端：主任务完成/中断/询问/错误提示音的播放与配置。
 //
 // 为什么播放放在 host：
 //   1) 上游 dsh-webui 的提示音由「客户端当前会话」的 turnTail 槽位触发，
 //      只有被选中的会话才会出声；改成 host 端监听 `session/event` 后，任何
-//      会话（含后台会话、子代理 subagent 回合、用户中断、审批/提问等待）
-//      一有动静就出声，与前端选中状态无关。
+//      前台或后台主任务一有需要关注的状态就出声，与前端选中状态无关；
+//      子任务和自动重试不会制造额外通知。
 //   2) 播放走 PowerShell（WPF MediaPlayer），绕开浏览器 autoplay 拦截，
 //      并支持 0..100 音量——只作用于这次播放，不动系统音量。
 //
@@ -15,7 +15,7 @@
 //
 // 路由（全部回环，Cache-Control: no-store）：
 //   GET  /api/aio-sound/state    → 配置 + 音效清单（内置 + 自定义目录扫描）
-//   POST /api/aio-sound/config   → 校验并写入 { enabled, volume, sound, customDir }
+//   POST /api/aio-sound/config   → 校验并写入总开关、音量、分类事件与自定义目录
 //   POST /api/aio-sound/preview  → 按当前音量试听一个音效（用户点「试听」）
 import { spawn } from 'node:child_process';
 import { existsSync, readdirSync, statSync } from 'node:fs';
@@ -39,6 +39,12 @@ const DEFAULT_CONFIG = Object.freeze({
   volume: 100,
   sound: DEFAULT_SOUND,
   customDir: '',
+  events: Object.freeze({
+    complete: Object.freeze({ enabled: true, sound: 'task-done.wav' }),
+    interrupted: Object.freeze({ enabled: true, sound: 'drop.wav' }),
+    question: Object.freeze({ enabled: true, sound: 'bell.wav' }),
+    error: Object.freeze({ enabled: true, sound: 'pulse.wav' }),
+  }),
 });
 
 const BUILTIN_LABELS = Object.freeze({
@@ -66,11 +72,24 @@ function safeSoundName(value) {
 function normalizeConfig(raw) {
   const source = raw !== null && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
   const volume = Number(source.volume);
+  const eventSource = source.events !== null && typeof source.events === 'object' && !Array.isArray(source.events)
+    ? source.events : {};
+  const events = {};
+  for (const kind of Object.keys(DEFAULT_CONFIG.events)) {
+    const item = eventSource[kind] !== null && typeof eventSource[kind] === 'object' ? eventSource[kind] : {};
+    events[kind] = {
+      enabled: item.enabled === undefined ? DEFAULT_CONFIG.events[kind].enabled : item.enabled !== false,
+      sound: safeSoundName(item.sound) ?? (kind === 'complete'
+        ? (safeSoundName(source.sound) ?? DEFAULT_CONFIG.events.complete.sound)
+        : DEFAULT_CONFIG.events[kind].sound),
+    };
+  }
   return {
     enabled: source.enabled === undefined ? DEFAULT_CONFIG.enabled : source.enabled !== false,
     volume: Number.isFinite(volume) ? Math.min(100, Math.max(0, Math.round(volume))) : DEFAULT_CONFIG.volume,
     sound: safeSoundName(source.sound) ?? DEFAULT_CONFIG.sound,
     customDir: typeof source.customDir === 'string' ? source.customDir.trim() : '',
+    events,
   };
 }
 
@@ -187,12 +206,27 @@ function playSound(file) {
 function playFor(event) {
   try {
     const config = currentConfig();
-    if (!config.enabled) return;
-    const result = playSound(config.sound);
+    const selected = config.events[event];
+    if (!config.enabled || !selected || !selected.enabled) return;
+    const result = playSound(selected.sound);
     if (!result.ok) log('play failed (' + event + '): ' + result.error);
   } catch (error) {
     log('play threw (' + event + '): ' + String((error && error.message) || error));
   }
+}
+
+function isTopLevelSession(session) {
+  const header = session?.header;
+  return header?.origin !== 'subagent' && !(Number.isSafeInteger(header?.delegationDepth) && header.delegationDepth > 0);
+}
+
+const played = new Set();
+function playOnce(kind, key) {
+  const identity = `${kind}:${key}`;
+  if (played.has(identity)) return;
+  played.add(identity);
+  if (played.size > 2048) played.delete(played.values().next().value);
+  playFor(kind);
 }
 
 // ------------------------------------------------------------------ 路由 --
@@ -256,6 +290,35 @@ function createHandler(route) {
           const file = safeSoundName(body.sound);
           if (file === null) return sendJson(res, 400, { ok: false, error: '音效名必须是单个 .wav 文件名' });
           patch.sound = file;
+          // 兼容 1.3.0 及旧客户端：旧的单一 sound 字段等价于“完成”音效。
+          const current = currentConfig();
+          patch.events = {
+            ...current.events,
+            complete: { ...current.events.complete, sound: file },
+          };
+        }
+        if (body.events !== undefined) {
+          if (body.events === null || typeof body.events !== 'object' || Array.isArray(body.events)) {
+            return sendJson(res, 400, { ok: false, error: 'events 必须是对象' });
+          }
+          const events = { ...(patch.events ?? currentConfig().events) };
+          for (const [kind, value] of Object.entries(body.events)) {
+            if (!Object.hasOwn(DEFAULT_CONFIG.events, kind) || value === null || typeof value !== 'object' || Array.isArray(value)) {
+              return sendJson(res, 400, { ok: false, error: '未知音效事件: ' + kind });
+            }
+            const next = { ...events[kind] };
+            if (value.enabled !== undefined) {
+              if (typeof value.enabled !== 'boolean') return sendJson(res, 400, { ok: false, error: kind + '.enabled 必须是布尔值' });
+              next.enabled = value.enabled;
+            }
+            if (value.sound !== undefined) {
+              const file = safeSoundName(value.sound);
+              if (file === null) return sendJson(res, 400, { ok: false, error: kind + '.sound 必须是单个 .wav 文件名' });
+              next.sound = file;
+            }
+            events[kind] = next;
+          }
+          patch.events = events;
         }
         if (body.customDir !== undefined) {
           if (typeof body.customDir !== 'string') return sendJson(res, 400, { ok: false, error: 'customDir 必须是字符串' });
@@ -306,19 +369,31 @@ function apply(ctx) {
     };
   }, 'dsh-aio-sound: http routes');
 
-  // 会话完成：监听所有会话（不区分当前选中）的回合结束。
-  // 故意不过滤 subagent / 中断 / 空回合——用户要求「逐次都响」。
+  // OpenCode 同类行为：只通知顶层会话，子代理不单独出声。
   ctx.on('session/event', (session, event) => {
+    if (!isTopLevelSession(session)) return;
     const type = event !== null && typeof event === 'object' && typeof event.type === 'string' ? event.type : '';
-    if (type === 'turn/end') playFor('turn/end');
-    else if (type === 'approval/asked') playFor('approval/asked');
+    const data = event?.data ?? event;
+    const sessionId = String(session?.id ?? 'session');
+    if (type === 'turn/end') {
+      const reason = data.reason?.kind;
+      const key = `${sessionId}:${data.turn ?? 'turn'}`;
+      if (reason === 'completed') playOnce('complete', key);
+      else if (reason === 'aborted' && data.reason?.reason?.kind === 'user') playOnce('interrupted', key);
+      else if (reason === 'error' || reason === 'blocked' || reason === 'max-tokens') playOnce('error', key);
+    } else if (type === 'approval/asked') {
+      playOnce('question', `${sessionId}:${data.id ?? event.seq ?? 'approval'}`);
+    }
   });
 
   // 向用户提问（plan 询问 / AskUserQuestion）走的是 waterfall 请求而非 session
   // 事件，这里单独挂一个只出声、不参与回答的监听器：返回 undefined，不截断
   // waterfall 的答案链。
-  ctx.on('user-questions/request', () => {
-    playFor('user-questions/request');
+  ctx.on('user-questions/request', (request) => {
+    const session = request?.agent?.session;
+    const root = session?.header?.parentSession ?? session?.id ?? 'session';
+    const ids = Array.isArray(request?.questions) ? request.questions.map((row) => row?.id ?? '').join(',') : 'question';
+    playOnce('question', `${root}:${ids}`);
   });
 
   log('mounted: /api/aio-sound/{state,config,preview} + session/event playback');

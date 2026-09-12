@@ -1,8 +1,8 @@
 {
   "name": "dsh-aio-sound",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
-  "description": "DSHEAC AIO 配套插件：会话完成提示音与「音效」设置栏。host 端监听所有会话（含后台会话/子代理/中断/审批与提问等待）的完成事件并播放提示音，支持 0–100 音量与内置/自定义音效。",
+  "description": "DSHEAC AIO 配套插件：为顶层会话完成、手动中断、询问和最终错误分别配置提示音。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

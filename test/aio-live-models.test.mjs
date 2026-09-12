@@ -77,6 +77,32 @@ test('发现请求 provider /models 并映射、去重、补 256k 默认', async
   ]);
 });
 
+test('官方 Flash 型号补全图片能力，未知及第三方同名型号不推断', async () => {
+  const mod = await pluginModule();
+  assert.deepEqual(mod.toDiscoveredModels({ data: [
+    { id: 'deepseek-flash' },
+    { id: 'deepseek-v4-flash' },
+    { id: 'deepseek-v4-flash-vision-exp' },
+    { id: 'relay/deepseek-flash' },
+  ] }), [
+    { id: 'deepseek-flash', contextWindow: 262144, inputModalities: ['text', 'image'] },
+    { id: 'deepseek-v4-flash', contextWindow: 262144, inputModalities: ['text', 'image'] },
+    { id: 'deepseek-v4-flash-vision-exp', contextWindow: 262144, inputModalities: ['text', 'image'] },
+    { id: 'relay/deepseek-flash', contextWindow: 262144 },
+  ]);
+});
+
+test('实时发现从统一后的 providers.deepseek-official 读取连接设置', async () => {
+  const mod = await pluginModule();
+  const settings = { providers: { 'deepseek-official': { baseURL: 'https://nested.example/v1', apiKeyEnv: 'NESTED_KEY' } } };
+  const { ctx, discoveries } = registryWith({ settings, credentialValue: 'nested-secret' });
+  mod.apply(ctx);
+  const call = await withFetch(() => ok({ data: [{ id: 'deepseek-flash' }] }),
+    async () => discoveries.get('llm-deepseek')({}));
+  assert.equal(call.calls[0].url, 'https://nested.example/v1/models');
+  assert.equal(call.calls[0].init.headers.authorization, 'Bearer nested-secret');
+});
+
 test('baseURL 优先级：请求 > 设置 > 默认；请求 apiKey 优先于凭据库', async () => {
   const mod = await pluginModule();
   const { ctx, discoveries, resolves } = registryWith({ settings: {}, credentialValue: 'store-key' });

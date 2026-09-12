@@ -9,7 +9,7 @@
 - Windows SDK 与 Visual Studio C++ Build Tools
 - 可访问 npm、Cargo 与 Tauri/NSIS/WebView2 构建资源的网络环境；依赖已缓存时可部分离线
 
-版型为 `AIO`（All-in-One）。当前内部 SemVer 为 `1.3.1`，与 `package.json`、`tauri-app/package.json`、`tauri-app/tauri.conf.json`、`tauri-app/Cargo.toml` 必须一致，`build-aio-package.ps1` 会在构建前校验。
+版型为 `AIO`（All-in-One）。当前内部 SemVer 为 `1.3.2`，与 `package.json`、`tauri-app/package.json`、`tauri-app/tauri.conf.json`、`tauri-app/Cargo.toml` 必须一致，`build-aio-package.ps1` 会在构建前校验。
 
 ## 统一构建入口
 
@@ -68,11 +68,11 @@ Tauri 的 `beforeBuildCommand` 是 `npm run prepare:bundle`，它调用唯一的
 
 ```text
 dist/
-├── DSHEAC-AIO-v1.3.1-Setup-x64.exe          # NSIS 单文件安装器
+├── DSHEAC-AIO-v1.3.2-Setup-x64.exe          # NSIS 单文件安装器
 ├── SHA256SUMS.txt                            # 顶层哈希清单
 ├── build-provenance.json                     # 来源提交、输入摘要、产物哈希
 └── portable/
-    ├── DSHEAC-AIO-v1.3.1-Portable-x64.zip    # 便携包（非安装依赖）
+    ├── DSHEAC-AIO-v1.3.2-Portable-x64.zip    # 便携包（非安装依赖）
     └── SHA256SUMS.txt
 ```
 
@@ -80,7 +80,7 @@ dist/
 
 ## 验收
 
-- 打包后核对 `dist\DSHEAC-AIO-v1.3.1-Setup-x64.exe` 存在且哈希与 `dist\SHA256SUMS.txt` 一致。
+- 打包后核对 `dist\DSHEAC-AIO-v1.3.2-Setup-x64.exe` 存在且哈希与 `dist\SHA256SUMS.txt` 一致。
 - 便携 ZIP 必须包含 `DSHEAC AIO.exe`、`.dsh-portable`、`resources\node\node.exe`、`resources\profile-seed\profiles\web-desktop\package.json`。
 - `-Verify` 会调用 `scripts/verify-aio-installer.ps1`：安装到含中文/空格的独立目录，隔离数据首启，确认服务端口属于本轮进程树，检查 seed 隐私排除，静默卸载并检查进程/端口/目录/注册表残留。报告写入 `verification\verification-*.json`，`result` 必须为 `PASS`。
 - `npm run dist`（`build-aio-release.ps1` → `build-aio-package.ps1 -FullTest`）在打包前运行全量 JS 与 Rust 测试，并先执行 `scripts/prepare-test-fixtures.mjs`。
