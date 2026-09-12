@@ -6,7 +6,7 @@
 >
 > **用户可见版本：v1**
 >
-> 机器内部 SemVer：`1.3.2`
+> 机器内部 SemVer：`1.3.3`
 >
 > 上游 DSH 基线：`0.1.3-alpha.2`，commit `c389f96bf3a9b6807cb71ed6bdad5849be0df6d8`
 
@@ -40,8 +40,8 @@ AIO 不表示包含上游项目所有历史功能；实际功能以本仓库打�
 
 发布产物：
 
-- `dist/DSHEAC-AIO-v1.3.2-Setup-x64.exe`
-- `dist/portable/DSHEAC-AIO-v1.3.2-Portable-x64.zip`
+- `dist/DSHEAC-AIO-v1.3.3-Setup-x64.exe`
+- `dist/portable/DSHEAC-AIO-v1.3.3-Portable-x64.zip`
 - `dist/SHA256SUMS.txt`、`dist/portable/SHA256SUMS.txt`
 - `dist/build-provenance.json`
 
@@ -80,7 +80,7 @@ powershell -NoProfile -File .\scripts\verify-aio-installer.ps1
 
 ## 本轮工程改进
 
-- 产品名统一为 `DSHEAC AIO`，用户版本统一为 `v1`，当前内部 SemVer 为 `1.3.2`；
+- 产品名统一为 `DSHEAC AIO`，用户版本统一为 `v1`，当前内部 SemVer 为 `1.3.3`；
 - 新增客户端整包更新（版本发现、通知偏好、下载校验、事务安装与回滚），与插件/内核更新源独立；
 - 安装脚本不再按映像名强杀进程，改为比对实际 `ExecutablePath` 与目标安装目录并按进程树结束；
 - 构建统一到 `build-aio.cmd`，sidecar 编译/原生模块/seed 审核/资源装配每轮只执行一次并带内容指纹缓存；

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 
-export const UPGRADE_TARGET = Object.freeze({ app: '1.3.2', kernel: '0.1.3-alpha.2' });
+export const UPGRADE_TARGET = Object.freeze({ app: '1.3.3', kernel: '0.1.3-alpha.2' });
 const official = (name: string): boolean => /^@deepseek-ai\/dsh(?:-|$)/.test(name);
 const fail = (): never => { throw new Error('PROFILE_UPGRADE_REQUIRED: offline dependency migration is not yet available; profile unchanged'); };
 type Manifest = { name?: string; version?: string; dependencies?: Record<string, string> };

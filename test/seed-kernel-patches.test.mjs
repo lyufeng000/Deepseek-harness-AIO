@@ -9,10 +9,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { applySeedPatches, SEED_PATCHES } from '../scripts/seed-kernel-patches.mjs';
+import { applySeedPatches, mirroredFile, SEED_PATCHES } from '../scripts/seed-kernel-patches.mjs';
 
 const DEEPSEEK_MODULE = ['profiles', 'web-desktop', 'node_modules', '@deepseek-ai', 'dsh-llm-deepseek', 'lib', 'index.js'];
 const WEBUI_VISION_HELPER = ['profiles', 'web-desktop', 'node_modules', '@dsh-external', 'dsh-webui', 'lib', 'vision-helper.js'];
+const WORKSPACE_CLIENT = ['profiles', 'web-desktop', 'node_modules', '@deepseek-ai', 'dsh-client-ui-workspace', 'lib', 'client.js'];
 
 const VISION_FROM = 'textModelImageFallback: z.boolean().default(true),';
 const VISION_TO = 'textModelImageFallback: z.boolean().default(false),';
@@ -40,9 +41,11 @@ test('补丁清单覆盖本轮全部事实源，路径稳定', () => {
     'provider-deepseek-official-icon', 'webui-markdown-stable-layout',
     'webui-markdown-no-node-virtualization', 'custom-motion-transcript-fade-only',
     'custom-marketplace-default-url', 'webui-vision-fallback-off',
+    'workspace-blank-session-skip-engaged',
   ]) assert.ok(ids.has(id), `missing ${id}`);
   assert.deepEqual(SEED_PATCHES[0].file, DEEPSEEK_MODULE);
   assert.deepEqual(SEED_PATCHES.find((p) => p.id === 'webui-vision-fallback-off').file, WEBUI_VISION_HELPER);
+  assert.deepEqual(SEED_PATCHES.find((p) => p.id === 'workspace-blank-session-skip-engaged').file, WORKSPACE_CLIENT);
 });
 
 test('打包编排对 staging 副本执行全部受控补丁', () => {
@@ -50,6 +53,7 @@ test('打包编排对 staging 副本执行全部受控补丁', () => {
   assert.match(source, /import \{ applySeedPatches \} from '\.\/seed-kernel-patches\.mjs';/);
   assert.match(source, /applySeedPatches\(resolve\('tauri-app\/resources\/profile-seed'\), \{ strict: true \}\)/);
   assert.ok(!source.includes('patchSeedKernel('), 'staging 必须执行全部受控补丁，不能只跑 DeepSeek 补丁');
+  assert.match(source, /applySeedPatches\(resolve\('tauri-app\/resources\/app'\), \{ planes: \['app'\], strict: true \}\)/);
 });
 
 test('DeepSeek 补丁统一配置路径和 input 字段，并精确声明 Flash 图片能力', (t) => {
@@ -63,8 +67,10 @@ test('DeepSeek 补丁统一配置路径和 input 字段，并精确声明 Flash 
   assert.match(patched, /id: "deepseek-flash"[\s\S]*?input: \["text", "image"\]/);
   assert.match(patched, /const Config = z\.object\(\{ providers: z\.dict\(ProviderConfig\)/);
   assert.match(patched, /settingsPath: \["providers", PROVIDER\]/);
-  assert.match(patched, /model\.input \?\?/);
-  assert.ok(!patched.includes('\tinputModalities: z.array'));
+  assert.match(patched, /const declared = model\.input\?\.length/);
+  assert.match(patched, /inputModalities: z\.array\(z\.union\(MODEL_MODALITIES\)\)/);
+  // input 不能是必填：缺少该字段的模型条目（例如设置 UI 写回 inputModalities）会让整份设置解析抛错。
+  assert.ok(!patched.includes('input: z.array(z.union(MODEL_MODALITIES)).min(1),'), 'input 必须是可选字段');
   const second = applySeedPatches(root);
   for (const patch of patches) assert.equal(second.find((row) => row.id === patch.id).reason, 'already patched', patch.id);
   assert.equal(fs.readFileSync(file, 'utf8'), patched);
@@ -163,4 +169,45 @@ suffix
   const second = applySeedPatches(root);
   assert.equal(second.find((r) => r.id === 'webui-done-sound-row-remove').reason, 'already patched');
   assert.equal(second.find((r) => r.id === 'webui-done-sound-reporting-remove').reason, 'already patched');
+});
+
+test('内核包补丁必须同时命中安装闭包副本（app 布局）', (t) => {
+  // 运行时的 @deepseek-ai/* 来自 resources/app/node_modules（stage.ts 铺设的安装闭包）；
+  // 只打 profile seed 会让补丁在真实实例上失效（1.3.2 的 DeepSeek 原生识图即为此）。
+  const mirrored = SEED_PATCHES.filter((p) => mirroredFile(p.file) !== null);
+  assert.ok(mirrored.length >= 10, '应覆盖全部内核包补丁');
+  for (const p of mirrored) assert.deepEqual(mirroredFile(p.file).slice(0, 2), ['node_modules', '@deepseek-ai']);
+  for (const id of ['webui-vision-fallback-off', 'status-rotator-pill-default-off', 'custom-marketplace-default-url']) {
+    assert.equal(mirroredFile(SEED_PATCHES.find((p) => p.id === id).file), null, `${id} 只存在于 profile，不应镜像`);
+  }
+
+  // 双布局 fixture：每个补丁目标在 profile 与安装闭包各放一份上游原文。
+  const files = {};
+  for (const p of SEED_PATCHES) {
+    const body = p.count === 2 ? `${p.from}\n${p.from}\n` : `${p.from}\n`;
+    const keys = [p.file.join('/')];
+    const rel = mirroredFile(p.file);
+    if (rel !== null) keys.push(rel.join('/'));
+    for (const key of keys) files[key] = (files[key] ?? '') + body;
+  }
+  const root = seedWith(t, files);
+  const appAdapter = path.join(root, ...mirroredFile(DEEPSEEK_MODULE));
+  const profileAdapter = path.join(root, ...DEEPSEEK_MODULE);
+  const profileBefore = fs.readFileSync(profileAdapter, 'utf8');
+
+  const appResults = applySeedPatches(root, { planes: ['app'], strict: true });
+  assert.equal(appResults.length, mirrored.length, 'app 面只处理内核包补丁');
+  assert.ok(appResults.every((row) => row.applied === true), 'app 面补丁应全部命中');
+  assert.equal(fs.readFileSync(profileAdapter, 'utf8'), profileBefore, 'app 面不得改动 profile 副本');
+  const patchedAdapter = fs.readFileSync(appAdapter, 'utf8');
+  assert.match(patchedAdapter, /id: "deepseek-flash"[\s\S]*?input: \["text", "image"\]/);
+  assert.match(patchedAdapter, /const declared = model\.input\?\.length/);
+
+  const second = applySeedPatches(root, { planes: ['app'], strict: true });
+  assert.ok(second.every((row) => row.applied === false && row.reason === 'already patched'));
+
+  // 安装闭包缺包时，app 面严格模式必须阻断构建，而不是静默跳过。
+  const bare = seedWith(t, { [DEEPSEEK_MODULE.join('/')]: `${SEED_PATCHES[0].from}\n` });
+  assert.equal(applySeedPatches(bare, { planes: ['app'] })[0].reason, 'dsh-llm-deepseek module not present');
+  assert.throws(() => applySeedPatches(bare, { planes: ['app'], strict: true }), /Required seed patches did not match/);
 });

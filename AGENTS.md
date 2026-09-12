@@ -61,7 +61,7 @@ build-aio.cmd -Clean
 3. 统一校验 `package.json`、`tauri-app/package.json`、`tauri-app/tauri.conf.json`、`tauri-app/Cargo.toml` 版本一致。
 4. `-Clean` 时对 release 目标执行 `cargo clean`。
 5. `-FullTest` 时先 `prepare-test-fixtures.mjs`，再编译 sidecar、跑全量 JS 测试与 `cargo test --locked`。
-6. 调用 `npm --prefix tauri-app run bundle`；其 `beforeBuildCommand` 触发唯一准备入口 `scripts/prepare-aio.mjs`（icon → inject → sidecar → seed-review → native → staging → 受控种子补丁，逐阶段内容指纹缓存）。staging 后由 `scripts/seed-kernel-patches.mjs` 给打包副本打受控种子补丁：DeepSeek 模型原生识图默认开（`inputModalities` 含 `image`）、`dsh-webui` 辅助视觉自动降级默认关（图片交给原生模型解析，不再转写文本）。补丁只作用于 `resources/profile-seed`，不改上游快照。
+6. 调用 `npm --prefix tauri-app run bundle`；其 `beforeBuildCommand` 触发唯一准备入口 `scripts/prepare-aio.mjs`（icon → inject → sidecar → seed-review → native → staging → 受控种子补丁，逐阶段内容指纹缓存）。staging 后由 `scripts/seed-kernel-patches.mjs` 给打包副本打受控种子补丁：DeepSeek 模型原生识图默认开（模型条目同时接受 `input` 与 `inputModalities`，Flash 声明 `image`）、`dsh-webui` 辅助视觉自动降级默认关（图片交给原生模型解析，不再转写文本）。补丁作用于 `resources/profile-seed` 与 `resources/app`（安装闭包 `node_modules`）两处：实例按安装闭包解析 `@deepseek-ai/*`，只打种子副本会导致「补丁已打、实例未生效」；不改上游快照。
 7. 执行 Tauri/NSIS 打包，生成单文件安装器。
 8. 复制安装器到临时输出并生成便携 ZIP。
 9. 计算顶层/便携包 SHA-256 与 `build-provenance.json`。

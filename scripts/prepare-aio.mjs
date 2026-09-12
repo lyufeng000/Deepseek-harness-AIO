@@ -36,5 +36,12 @@ try {
     for (const patched of applySeedPatches(resolve('tauri-app/resources/profile-seed'), { strict: true })) {
       console.log(`[build] seed-patch ${patched.id}: ${patched.applied ? 'applied' : 'skipped'} ${patched.reason ?? ''}`);
     }
+    // 内核包（@deepseek-ai/*）在安装闭包 resources/app/node_modules 下另有一份，
+    // 而真实实例按那一份解析（$DSH_HOME/profiles/node_modules 的链接指向它，
+    // 且侧车会清掉 profile 里遮蔽该闭包的包拷贝）。同一批补丁必须同时命中，
+    // 否则会出现“补丁已打、实例未生效”——1.3.2 的 DeepSeek 原生识图即为此失效。
+    for (const patched of applySeedPatches(resolve('tauri-app/resources/app'), { planes: ['app'], strict: true })) {
+      console.log(`[build] app-patch ${patched.id}: ${patched.applied ? 'applied' : 'skipped'} ${patched.reason ?? ''}`);
+    }
   }, toolchain);
 } finally { writeJson(resolve('temp/build-metrics/prepare.json'), results); }

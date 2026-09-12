@@ -14,8 +14,38 @@ const STATUS_ROTATOR_CLIENT = ['profiles', 'web-desktop', 'node_modules', 'dsh-s
 const STATUS_ROTATOR_HOST = ['profiles', 'web-desktop', 'node_modules', 'dsh-status-rotator', 'lib', 'index.js'];
 const STATUS_ROTATOR_EXAMPLE = ['profiles', 'web-desktop', 'node_modules', 'dsh-status-rotator', 'config.example.json'];
 const WEBUI_CLIENT = ['profiles', 'web-desktop', 'node_modules', '@dsh-external', 'dsh-webui', 'lib', 'client.js'];
+const WORKSPACE_CLIENT = ['profiles', 'web-desktop', 'node_modules', '@deepseek-ai', 'dsh-client-ui-workspace', 'lib', 'client.js'];
 const MODELS_UI_CLIENT = ['profiles', 'web-desktop', 'node_modules', '@deepseek-ai', 'dsh-client-ui-settings-models', 'lib', 'client.js'];
 const CUSTOM_CLIENT = ['profiles', 'web-desktop', 'node_modules', '@ha-na-bi', 'dsh-client-ui-custom', 'lib', 'client.js'];
+
+// ------------------------------------------------------------ 运行时副本镜像 --
+//
+// 内置内核包（@deepseek-ai/*）在打包产物里有两份副本：
+//   1) resources/profile-seed/profiles/web-desktop/node_modules/@deepseek-ai/…
+//   2) resources/app/node_modules/@deepseek-ai/…（stage.ts 从仓库根 node_modules
+//      铺设的安装闭包）
+// 真实实例按第 2 份解析：$DSH_HOME/profiles/node_modules/@deepseek-ai/* 是指向
+// 安装闭包的链接，而 sidecar 的 healProfileModuleShadowing 会清掉 profile 里
+// 遮蔽该闭包的包拷贝。因此只打 profile seed 的补丁在用户机器上不生效
+// （1.3.2 实例上 DeepSeek 原生识图即因此失效）。
+//
+// 不另列镜像清单：以 profile 布局里作用域为 @deepseek-ai/* 为判据，新增的内核包
+// 补丁自动纳入，避免再次出现“源码改了但实例没变”。
+const PROFILE_MODULES_PREFIX = ['profiles', 'web-desktop', 'node_modules'];
+const APP_MODULES_PREFIX = ['node_modules'];
+const MIRRORED_SCOPE = ['@deepseek-ai'];
+
+/**
+ * 同一补丁在安装闭包（app）布局下的路径。
+ * @param {string[]} file - profile seed 布局下的补丁路径。
+ * @returns {string[] | null} app 布局路径；非 @deepseek-ai 目标（只存在于 profile）返回 null。
+ */
+export function mirroredFile(file) {
+  const head = [...PROFILE_MODULES_PREFIX, ...MIRRORED_SCOPE];
+  if (file.length <= head.length) return null;
+  if (JSON.stringify(file.slice(0, head.length)) !== JSON.stringify(head)) return null;
+  return [...APP_MODULES_PREFIX, ...file.slice(PROFILE_MODULES_PREFIX.length)];
+}
 
 /** 受控补丁清单：稳定锚点、幂等替换；打包阶段要求全部命中。 */
 export const SEED_PATCHES = Object.freeze([
@@ -38,7 +68,7 @@ export const SEED_PATCHES = Object.freeze([
     file: DEEPSEEK_MODULE,
     label: 'dsh-llm-deepseek module',
     from: '\tinputModalities: z.array(z.union(MODEL_MODALITIES)).min(1).default(["text"]),',
-    to: '\tinput: z.array(z.union(MODEL_MODALITIES)).min(1),',
+    to: '\tinput: z.array(z.union(MODEL_MODALITIES)),\n\tinputModalities: z.array(z.union(MODEL_MODALITIES)),',
   }),
   Object.freeze({
     id: 'deepseek-legacy-vision-common-input',
@@ -52,7 +82,7 @@ export const SEED_PATCHES = Object.freeze([
     file: DEEPSEEK_MODULE,
     label: 'dsh-llm-deepseek module',
     from: '\t\tconst inputModalities = model.inputModalities ?? ["text"];',
-    to: '\t\tconst inputModalities = model.input ?? (["deepseek-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp"].includes(model.id) ? ["text", "image"] : ["text"]);',
+    to: '\t\tconst declared = model.input?.length ? model.input : model.inputModalities?.length ? model.inputModalities : undefined;\n\t\tconst inputModalities = declared ?? (["deepseek-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp"].includes(model.id) ? ["text", "image"] : ["text"]);',
   }),
   Object.freeze({
     id: 'deepseek-config-schema-nested',
@@ -147,6 +177,16 @@ export const SEED_PATCHES = Object.freeze([
     from: '\tctx.on("agent/pre-step", async ({ agent, messages, step, signal }, next) => {\n\t\tconst decision = await next();',
     to: '\tctx.on("agent/pre-step", async ({ agent, messages, step, signal }, next) => {\n\t\tconst refreshSessions = globalThis[Symbol.for("dsh.eac.agent-instructions.refresh.v1")];\n\t\tif (refreshSessions instanceof WeakSet && refreshSessions.delete(agent.session)) {\n\t\t\tbaselinePreparations.delete(agent.session);\n\t\t\tinstructionVersions.delete(agent.session);\n\t\t}\n\t\tconst decision = await next();',
   }),
+  // 首轮 prompt 被拒（例如模型不支持图片）后，Host 仍把该会话视为空白日志；
+  // 若「新对话」复用它，界面会停在空对话不动（点新对话无反应）。
+  // 只复用真正没有发送过任何内容的空白会话。
+  Object.freeze({
+    id: 'workspace-blank-session-skip-engaged',
+    file: WORKSPACE_CLIENT,
+    label: 'dsh-client-ui-workspace connectWorkspace',
+    from: '\t\t\t\t\tif (summary !== void 0 && summary.blank && summary.cwd === workspace.path && workspace.sessionIds.includes(summary.id) && !archived.includes(summary.id)) return summary.id;',
+    to: '\t\t\t\t\tif (summary !== void 0 && summary.blank && summary.cwd === workspace.path && workspace.sessionIds.includes(summary.id) && !archived.includes(summary.id)) {\n\t\t\t\t\t\tconst engaged = this.sessions.binding(summary.id)?.session?.promptAttempted === true;\n\t\t\t\t\t\tif (!engaged) return summary.id;\n\t\t\t\t\t}',
+  }),
   Object.freeze({
     id: 'webui-markdown-stable-layout',
     file: WEBUI_CLIENT,
@@ -229,35 +269,46 @@ export const SEED_PATCHES = Object.freeze([
 /**
  * Apply one controlled patch to a packaged seed root.
  * Idempotent: a second call reports `applied: false`.
- * @param {string} seedRoot - path to the packaged profile seed (…/profile-seed).
+ * @param {string} seedRoot - root that holds the target file（profile seed 或 app 布局根）。
  * @param {{id: string, file: string[], label: string, from: string, to: string}} patch - controlled patch descriptor.
+ * @param {string[]} [file] - 目标路径；省略时用补丁自带的 profile 布局路径。
  * @returns {{id: string, applied: boolean, reason?: string, file?: string}}
  */
-function patchOnce(seedRoot, patch) {
-  const file = path.join(seedRoot, ...patch.file);
-  if (!fs.existsSync(file)) return { id: patch.id, applied: false, reason: `${patch.label} not present` };
-  const raw = fs.readFileSync(file, 'utf8');
+function patchOnce(seedRoot, patch, file = patch.file) {
+  const target = path.join(seedRoot, ...file);
+  if (!fs.existsSync(target)) return { id: patch.id, applied: false, reason: `${patch.label} not present` };
+  const raw = fs.readFileSync(target, 'utf8');
   const eol = raw.includes('\r\n') ? '\r\n' : '\n';
   let source = raw.replace(/\r\n/g, '\n');
   const from = patch.from.replace(/\r\n/g, '\n');
   const to = patch.to.replace(/\r\n/g, '\n');
   const expectedCount = patch.count ?? 1;
   const occurrences = (haystack, needle) => haystack.split(needle).length - 1;
-  if (occurrences(source, to) === expectedCount) return { id: patch.id, applied: false, reason: 'already patched', file };
-  if (occurrences(source, from) !== expectedCount) return { id: patch.id, applied: false, reason: 'target default not found (upstream changed?)', file };
+  if (occurrences(source, to) === expectedCount) return { id: patch.id, applied: false, reason: 'already patched', file: target };
+  if (occurrences(source, from) !== expectedCount) return { id: patch.id, applied: false, reason: 'target default not found (upstream changed?)', file: target };
   source = patch.all ? source.replaceAll(from, to) : source.replace(from, to);
-  fs.writeFileSync(file, eol === '\r\n' ? source.replace(/\n/g, '\r\n') : source);
-  return { id: patch.id, applied: true, file };
+  fs.writeFileSync(target, eol === '\r\n' ? source.replace(/\n/g, '\r\n') : source);
+  return { id: patch.id, applied: true, file: target };
 }
 
 /**
  * Apply every controlled seed patch to a packaged seed root.
  * A missing or reworded target skips only its own patch.
- * @param {string} seedRoot - path to the packaged profile seed (…/profile-seed).
+ * @param {string} seedRoot - root that holds the targets（profile seed 或 app 布局根）。
+ * @param {{strict?: boolean, planes?: ('profile' | 'app')[]}} [options] - planes 默认 ['profile']；
+ *   含 'app' 时额外处理安装闭包布局下有镜像的 @deepseek-ai/* 补丁。
  * @returns {{id: string, applied: boolean, reason?: string, file?: string}[]} one result per patch, in patch order.
  */
 export function applySeedPatches(seedRoot, options = {}) {
-  const results = SEED_PATCHES.map((patch) => patchOnce(seedRoot, patch));
+  const planes = options.planes ?? ['profile'];
+  const results = [];
+  for (const patch of SEED_PATCHES) {
+    if (planes.includes('profile')) results.push(patchOnce(seedRoot, patch));
+    if (planes.includes('app')) {
+      const file = mirroredFile(patch.file);
+      if (file !== null) results.push(patchOnce(seedRoot, patch, file));
+    }
+  }
   if (options.strict === true) {
     const failures = results.filter((result) => !result.applied && result.reason !== 'already patched');
     if (failures.length > 0) {
